@@ -54,6 +54,9 @@ public class ChatService {
     /** Below this similarity a passage is not really about the question, so it isn't used. */
     static final double MIN_SIMILARITY = 0.45;
 
+    /** How much of the latest document is sent when a question matches nothing (~10,000 characters). */
+    static final int WHOLE_DOC_CHUNKS = 12;
+
     public static String systemPrompt(ZonedDateTime now) {
         return SYSTEM.formatted(NOW.format(now));
     }
@@ -85,6 +88,9 @@ public class ChatService {
         List<Hit> hits = documents.store().search(q, qv, TOP_K);
         // Meaning search always returns something; drop passages that aren't really related.
         if (qv != null) hits = hits.stream().filter(h -> h.chunk().vector() == null || h.score() >= MIN_SIMILARITY).toList();
+        // "Summarise it", "make questions from it", "score it": nothing matches by meaning, so give
+        // the AI the latest document itself. It still ignores it for unrelated questions.
+        if (hits.isEmpty()) hits = documents.store().latestDocumentChunks(WHOLE_DOC_CHUNKS);
         List<Source> sources = new ArrayList<>();
         for (int i = 0; i < hits.size(); i++) {
             Hit h = hits.get(i);

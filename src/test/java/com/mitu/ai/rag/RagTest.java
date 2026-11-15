@@ -35,6 +35,18 @@ class RagTest {
     }
 
     @Test
+    void latestDocumentChunksComeInReadingOrder() {
+        VectorStore store = new VectorStore(null, json);
+        store.add(new DocumentInfo("old", "old.pdf", 1, 1, 0, false), List.of(new Chunk("old", "old.pdf", 1, "old text", null)));
+        store.add(new DocumentInfo("new", "cv.pdf", 2, 3, 0, false), List.of(
+                new Chunk("new", "cv.pdf", 1, "first", null),
+                new Chunk("new", "cv.pdf", 1, "second", null),
+                new Chunk("new", "cv.pdf", 2, "third", null)));
+        assertThat(store.latestDocumentChunks(2)).extracting(h -> h.chunk().text()).containsExactly("first", "second");
+        assertThat(new VectorStore(null, json).latestDocumentChunks(5)).isEmpty();
+    }
+
+    @Test
     void cosineSimilarity() {
         assertThat(VectorStore.cosine(new float[] {1, 0}, new float[] {1, 0})).isEqualTo(1.0);
         assertThat(VectorStore.cosine(new float[] {1, 0}, new float[] {0, 1})).isEqualTo(0.0);

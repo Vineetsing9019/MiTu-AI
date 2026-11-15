@@ -71,6 +71,17 @@ public class VectorStore {
         }
     }
 
+    /**
+     * The most recently uploaded document's chunks, in reading order (at most {@code max}).
+     * Used when a question is about "it" ("summarise it", "score it") and matches no passage.
+     */
+    public List<Hit> latestDocumentChunks(int max) {
+        List<DocumentInfo> all = documents();
+        if (all.isEmpty()) return new ArrayList<>();
+        String latest = all.get(all.size() - 1).id();
+        return chunks.stream().filter(c -> c.docId().equals(latest)).limit(max).map(c -> new Hit(c, 0)).toList();
+    }
+
     public boolean isEmpty() {
         return chunks.isEmpty();
     }
