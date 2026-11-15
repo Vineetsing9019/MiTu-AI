@@ -119,8 +119,22 @@ public class ChatService {
 
     /** Only the sources the answer actually cites ([1], [2]...); none when it answered from general knowledge. */
     public static List<Source> cited(String answer, List<Source> sources) {
-        return sources.stream().filter(s -> answer.contains("[" + s.n() + "]")).toList();
+        // Models write citations as [1], [1][2], [1, 2] or [1-3]; collect every number used.
+        java.util.Set<Integer> used = new java.util.HashSet<>();
+        java.util.regex.Matcher m = CITATION.matcher(answer);
+        while (m.find()) {
+            for (String part : m.group(1).split(",")) {
+                String[] range = part.trim().split("[-–]");
+                int from = Integer.parseInt(range[0].trim());
+                int to = range.length > 1 ? Integer.parseInt(range[1].trim()) : from;
+                for (int n = from; n <= Math.min(to, from + 20); n++) used.add(n);
+            }
+        }
+        return sources.stream().filter(s -> used.contains(s.n())).toList();
     }
+
+    private static final java.util.regex.Pattern CITATION =
+            java.util.regex.Pattern.compile("\\[(\\d+(?:\\s*[-–,]\\s*\\d+)*)\\]");
 
     public void reset(String sessionId) {
         if (sessionId != null) sessions.remove(sessionId);

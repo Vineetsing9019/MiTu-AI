@@ -99,6 +99,9 @@ class RagTest {
         var b = new ChatService.Source(2, "a.pdf", 1, "y", 0.5);
         assertThat(ChatService.cited("You get 24 days [1].", List.of(a, b))).containsExactly(a);
         assertThat(ChatService.cited("No citation here.", List.of(a, b))).isEmpty();
+        assertThat(ChatService.cited("Both say so [1, 2].", List.of(a, b))).containsExactly(a, b);
+        assertThat(ChatService.cited("See [1-2].", List.of(a, b))).containsExactly(a, b);
+        assertThat(ChatService.cited("Only this [2][9].", List.of(a, b))).containsExactly(b);
     }
 
     @Test
