@@ -4,6 +4,9 @@
 
 **Chat with your PDFs and get answers with page citations. Turn photos into anime-style art.**
 
+### 🌐 [Live demo: mitu-ai.onrender.com](https://mitu-ai.onrender.com)
+<sub>Free hosting: the first visit can take ~40 s to wake up.</sub>
+
 Built with Java 21 · Spring Boot 3 · Google Gemini · Retrieval-Augmented Generation (RAG)
 
 [![CI](https://github.com/Vineetsing9019/MiTu-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/Vineetsing9019/MiTu-AI/actions/workflows/ci.yml)
