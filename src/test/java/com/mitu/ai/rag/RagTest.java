@@ -69,6 +69,10 @@ class RagTest {
         // The index survives a restart.
         VectorStore reloaded = new VectorStore(dir.resolve("index.json"), json);
         assertThat(reloaded.documents()).extracting(DocumentInfo::name).containsExactly("policy.pdf");
+        // Uploading the same file again replaces it.
+        DocumentInfo again = docs.addPdf("policy.pdf", pdf("Welcome.", "Employees get 24 days of paid leave every year."));
+        assertThat(docs.list()).extracting(DocumentInfo::id).containsExactly(again.id());
+        info = again;
         assertThat(docs.delete(info.id())).isTrue();
         assertThat(docs.list()).isEmpty();
     }

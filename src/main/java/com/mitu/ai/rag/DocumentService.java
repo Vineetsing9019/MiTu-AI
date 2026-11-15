@@ -80,6 +80,8 @@ public class DocumentService {
             }
         }
         if (!smart) chunks.replaceAll(c -> new Chunk(c.docId(), c.docName(), c.page(), c.text(), null));
+        // Uploading a file again replaces the old copy instead of adding a duplicate.
+        store.documents().stream().filter(d -> d.name().equals(name)).forEach(d -> store.remove(d.id()));
         DocumentInfo doc = new DocumentInfo(id, name, pages.size(), chunks.size(), System.currentTimeMillis(), smart);
         store.add(doc, chunks);
         return doc;

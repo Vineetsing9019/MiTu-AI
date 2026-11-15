@@ -40,6 +40,9 @@
         <button>Make 5 interview questions from it</button>
       </div>
       <form id="ask" class="ask">
+        <label class="attach" title="Attach a PDF" aria-label="Attach a PDF">
+          <input type="file" id="chatPdf" accept="application/pdf,.pdf" hidden>📎
+        </label>
         <textarea id="question" rows="1" maxlength="2000" placeholder="Ask MiTu something…" required></textarea>
         <button type="submit" class="primary" id="send">Send</button>
       </form>
@@ -49,7 +52,7 @@
     <!-- DOCUMENTS -->
     <section id="docs" class="panel">
       <label id="drop" class="drop">
-        <input type="file" id="pdf" accept="application/pdf" hidden>
+        <input type="file" id="pdf" accept="application/pdf,.pdf" hidden>
         <div class="drop-icon">📄</div>
         <b>Drop a PDF here or click to choose</b>
         <span>Notes, resumes, policies, books… (text PDFs, up to 20 MB)</span>

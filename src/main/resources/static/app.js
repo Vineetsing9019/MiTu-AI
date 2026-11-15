@@ -31,6 +31,27 @@ async function loadStatus() {
   }
 }
 
+// ---------- API helper ----------
+/* Calls the server and returns its JSON. Turns every kind of failure into a sentence a person
+   understands: Render's free plan sleeps and restarts, and then answers with an HTML page
+   (502/503) instead of JSON. */
+async function api(url, options = {}) {
+  let res;
+  try {
+    res = await fetch(url, options);
+  } catch {
+    throw new Error('Can\'t reach MiTu. Check your internet, or wait a moment: the server may be waking up.');
+  }
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : {}; } catch { /* not JSON: a proxy or error page */ }
+  if (res.ok && data) return data;
+  if (data && data.message) throw new Error(data.message);
+  if ([502, 503, 504].includes(res.status)) throw new Error('MiTu is waking up or updating. Please try again in about a minute.');
+  if (res.status === 413) throw new Error('That file is too big (20 MB max).');
+  throw new Error(`Something went wrong (error ${res.status}). Please try again.`);
+}
+
 // ---------- chat ----------
 let sessionId = store.get('mitu-session') || newId();
 store.set('mitu-session', sessionId);
@@ -64,13 +85,11 @@ async function ask(question) {
   const typing = addMsg('bot', '<span class="typing"><span></span><span></span><span></span></span>');
   $('#send').disabled = true;
   try {
-    const res = await fetch('/api/chat', {
+    const data = await api('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, sessionId }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Something went wrong');
     let html = markdown(data.answer);
     if (data.sources?.length) {
       html += '<div class="sources">' + data.sources
@@ -114,7 +133,7 @@ $('#newChat').addEventListener('click', async () => {
 async function loadDocs() {
   const list = $('#docList');
   try {
-    const docs = await (await fetch('/api/documents')).json();
+    const docs = await api('/api/documents');
     if (!docs.length) { list.innerHTML = '<li class="empty">No documents yet.</li>'; return; }
     list.innerHTML = '';
     for (const d of docs) {
@@ -135,24 +154,35 @@ async function loadDocs() {
   }
 }
 
-async function uploadPdf(file) {
+/* Uploads a PDF. Shows progress in the Documents tab, and in the chat when attached from there. */
+async function uploadPdf(file, fromChat = false) {
   if (!file) return;
+  const note = (t) => { $('#uploading').hidden = false; $('#uploading').textContent = t; };
+  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+    const msg = 'Please choose a PDF file.';
+    fromChat ? addMsg('bot', '⚠ ' + msg) : note('⚠ ' + msg);
+    return;
+  }
+  const status = fromChat ? addMsg('bot', `📄 Reading <b>${esc(file.name)}</b>…`) : null;
+  note(`Reading and indexing "${file.name}"…`);
   const form = new FormData();
   form.append('file', file);
-  $('#uploading').hidden = false;
-  $('#uploading').textContent = `Reading and indexing "${file.name}"…`;
   try {
-    const res = await fetch('/api/documents', { method: 'POST', body: form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message);
-    $('#uploading').textContent = `✅ "${data.name}" is ready: ${data.pages} pages, ${data.chunks} chunks. Ask about it in Chat.`;
+    const data = await api('/api/documents', { method: 'POST', body: form });
+    const done = `✅ "${data.name}" is ready: ${data.pages} page${data.pages === 1 ? '' : 's'}, ${data.chunks} chunks.`;
+    note(done + ' Ask about it in Chat.');
+    if (status) status.querySelector('.bubble').innerHTML = esc(done) + ' Ask me anything about it 👇';
     loadDocs();
   } catch (e) {
-    $('#uploading').textContent = '⚠ ' + (e.message || 'Upload failed');
+    note('⚠ ' + e.message);
+    if (status) status.querySelector('.bubble').textContent = '⚠ ' + e.message;
   }
 }
-$('#pdf').addEventListener('change', (e) => uploadPdf(e.target.files[0]));
+// Reset each input after use, so choosing the same file again still uploads it.
+$('#pdf').addEventListener('change', (e) => { uploadPdf(e.target.files[0]); e.target.value = ''; });
+$('#chatPdf').addEventListener('change', (e) => { uploadPdf(e.target.files[0], true); e.target.value = ''; });
 dropZone($('#drop'), uploadPdf);
+dropZone($('#ask'), (f) => uploadPdf(f, true));
 
 function dropZone(el, onFile) {
   el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('over'); });
@@ -189,7 +219,7 @@ function choosePhoto(file) {
   $('#makeArt').disabled = false;
   $('#artNote').textContent = '';
 }
-$('#photo').addEventListener('change', (e) => choosePhoto(e.target.files[0]));
+$('#photo').addEventListener('change', (e) => { choosePhoto(e.target.files[0]); e.target.value = ''; });
 dropZone($('#photoDrop'), choosePhoto);
 
 $('#makeArt').addEventListener('click', async () => {
