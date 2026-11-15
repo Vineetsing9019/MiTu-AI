@@ -52,7 +52,7 @@ public class ChatService {
             - Never invent page numbers, names or figures.""";
 
     /** Below this similarity a passage is not really about the question, so it isn't used. */
-    static final double MIN_SIMILARITY = 0.6;
+    static final double MIN_SIMILARITY = 0.45;
 
     public static String systemPrompt(ZonedDateTime now) {
         return SYSTEM.formatted(NOW.format(now));
@@ -98,7 +98,11 @@ public class ChatService {
         synchronized (history) {
             turns = new ArrayList<>(history);
         }
-        turns.add(new Turn("user", promptWithContext(q, hits)));
+        // Tell the AI which files exist, so "my resume" or "he" makes sense to it.
+        String files = documents.list().stream().map(d -> d.name()).collect(java.util.stream.Collectors.joining(", "));
+        String prompt = promptWithContext(q, hits);
+        if (!files.isEmpty()) prompt = "(Files the user has uploaded: " + files + ")\n\n" + prompt;
+        turns.add(new Turn("user", prompt));
         try {
             String answer = ai.generate(systemPrompt(ZonedDateTime.now(ZONE)), turns);
             synchronized (history) {
