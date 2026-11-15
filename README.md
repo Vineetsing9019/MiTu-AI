@@ -27,8 +27,10 @@ Built with Java 21 · Spring Boot 3 · Google Gemini · Retrieval-Augmented Gene
 |---|---|
 | 📄 **Chat with your documents** | Upload any text PDF (notes, a policy, a book, a resume). MiTu splits it into chunks, turns each chunk into an embedding and finds the passages that match your question by meaning. |
 | 🔎 **Answers with sources** | Every answer shows chips like `handbook.pdf · p.2`, so you can check exactly where it came from. The AI is told to answer from your documents only and to say when the answer isn't there. |
+| 🌐 **Answers from the web** | For news, people, places and other facts, Gemini searches Google itself (search grounding) and the answer shows 🌐 links to its sources. If grounding isn't available on the key, MiTu looks the question up on Wikipedia's free API instead. |
+| 🖼️ **Draws pictures in chat** | "Draw a cute cat in anime style": the AI writes a detailed image prompt and the picture is painted free by Pollinations.ai, with no key needed. |
 | 🧠 **Conversation memory** | Follow-up questions ("and for sick leave?") work, because each chat keeps its recent turns. |
-| 🎨 **Anime art from photos** | Upload a photo and pick a style (Anime, Watercolor, Pencil sketch, Comic, Pixel art). Gemini's image model redraws it while keeping the same people and scene. |
+| 🎨 **Anime art from photos** | Upload a photo and pick a style (Anime, Watercolor, Pencil sketch, Comic, Pixel art). With a paid Gemini key, its image model redraws the photo itself. **Free:** Gemini describes the photo, then Pollinations.ai paints that scene in the style. |
 | 🛟 **Never breaks in a demo** | With no API key, a rate limit or an AI outage, MiTu degrades gracefully: keyword (TF-IDF) search answers with the best passages, and a browser-side image filter (Sobel edges + colour quantisation) still produces art. |
 | 🛡️ **Safe to put online** | A per-visitor token-bucket rate limiter protects the free AI quota. The API key only ever lives in an environment variable. |
 

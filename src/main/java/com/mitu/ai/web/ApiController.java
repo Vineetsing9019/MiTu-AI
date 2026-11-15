@@ -91,7 +91,11 @@ public class ApiController {
     @PostMapping(value = "/art", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<byte[]> art(@RequestParam("photo") MultipartFile photo,
                                       @RequestParam(value = "style", required = false) String style) throws IOException {
-        GeminiClient.Image img = art.create(photo.getBytes(), photo.getContentType(), ArtService.Style.from(style));
-        return ResponseEntity.ok().contentType(MediaType.parseMediaType(img.mimeType())).body(img.bytes());
+        ArtService.Result r = art.create(photo.getBytes(), photo.getContentType(), ArtService.Style.from(style));
+        return ResponseEntity.ok()
+                .header("X-Mitu-Engine", r.engine()) // "gemini" (edits the photo) or "free" (describe + paint)
+                .header("Access-Control-Expose-Headers", "X-Mitu-Engine")
+                .contentType(MediaType.parseMediaType(r.image().mimeType()))
+                .body(r.image().bytes());
     }
 }

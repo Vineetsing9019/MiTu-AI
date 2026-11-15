@@ -56,6 +56,13 @@ h2 { font-size: 16px; margin: 24px 0 10px; }
 .bubble p:last-child { margin: 0; }
 .sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .source { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); cursor: help; }
+.bubble a { color: var(--accent); }
+.source.web { text-decoration: none; }
+.source.web:hover { text-decoration: underline; }
+.gen { position: relative; margin-top: 10px; min-height: 120px; border-radius: 12px; overflow: hidden; background: var(--accent-soft); max-width: 420px; }
+.gen img { display: block; width: 100%; height: auto; }
+.gen-busy { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 34px 14px; color: var(--muted); font-size: 13px; }
+.small-btn { padding: 6px 12px; font-size: 13px; margin-top: 8px; }
 .mode { display: block; font-size: 11px; color: var(--muted); margin-top: 8px; }
 .typing span { display: inline-block; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
 .typing span:nth-child(2) { animation-delay: .2s; } .typing span:nth-child(3) { animation-delay: .4s; }

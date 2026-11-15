@@ -12,13 +12,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.net.URI;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Talks to Google's Gemini REST API: text answers, embeddings (for search)
- * and image editing (for anime art). Every call needs an API key; without one
- * MiTu falls back to its offline modes.
+ * Talks to Google's Gemini REST API: text answers (optionally grounded with Google Search),
+ * embeddings (for document search), photo descriptions and image editing. Every call needs
+ * an API key; without one MiTu falls back to its offline modes.
  */
 @Component
 public class GeminiClient {
@@ -31,6 +35,12 @@ public class GeminiClient {
 
     /** A generated picture. */
     public record Image(String mimeType, byte[] bytes) {}
+
+    /** A web page an answer was based on. */
+    public record WebSource(String title, String url) {}
+
+    /** The model's answer, plus the web pages Google Search used for it (if any). */
+    public record Answer(String text, List<WebSource> web) {}
 
     private final GeminiProperties props;
     private final ObjectMapper json;
@@ -51,6 +61,14 @@ public class GeminiClient {
 
     /** Asks the chat model, with a system instruction and the conversation so far. */
     public String generate(String system, List<Turn> turns) {
+        return generate(system, turns, false).text();
+    }
+
+    /**
+     * Asks the chat model. With {@code googleSearch}, the model may search Google itself
+     * when the question needs fresh or factual information, and the pages it used come back.
+     */
+    public Answer generate(String system, List<Turn> turns, boolean googleSearch) {
         ObjectNode body = json.createObjectNode();
         body.putObject("systemInstruction").putArray("parts").addObject().put("text", system);
         ArrayNode contents = body.putArray("contents");
@@ -59,14 +77,28 @@ public class GeminiClient {
             c.put("role", t.role());
             c.putArray("parts").addObject().put("text", t.text());
         }
+        if (googleSearch) body.putArray("tools").addObject().putObject("google_search");
         body.putObject("generationConfig").put("temperature", 0.3);
-        JsonNode res = postWithFallback(props.chatModel(), ":generateContent", body);
+        JsonNode candidate = postWithFallback(props.chatModel(), ":generateContent", body).path("candidates").path(0);
         StringBuilder out = new StringBuilder();
-        for (JsonNode part : res.path("candidates").path(0).path("content").path("parts")) {
+        for (JsonNode part : candidate.path("content").path("parts")) {
             out.append(part.path("text").asText(""));
         }
         if (out.isEmpty()) throw new AiException("The AI gave an empty answer. Please try again.");
-        return out.toString().trim();
+        return new Answer(out.toString().trim(), webSources(candidate.path("groundingMetadata")));
+    }
+
+    /** The distinct web pages listed in a Google Search grounding block. */
+    static List<WebSource> webSources(JsonNode grounding) {
+        Map<String, WebSource> byTitle = new LinkedHashMap<>();
+        for (JsonNode chunk : grounding.path("groundingChunks")) {
+            JsonNode web = chunk.path("web");
+            String url = web.path("uri").asText("");
+            if (url.isBlank()) continue;
+            String title = web.path("title").asText(url);
+            byTitle.putIfAbsent(title, new WebSource(title, url));
+        }
+        return new ArrayList<>(byTitle.values()).subList(0, Math.min(5, byTitle.size()));
     }
 
     /** Turns text into a vector of numbers that captures its meaning. */
@@ -81,7 +113,24 @@ public class GeminiClient {
         return v;
     }
 
-    /** Sends a photo with an instruction and returns the redrawn picture. */
+    /** Looks at a photo and answers an instruction about it in text (works on the free plan). */
+    public String describeImage(byte[] photo, String mimeType, String instruction) {
+        ObjectNode body = json.createObjectNode();
+        ArrayNode parts = body.putArray("contents").addObject().putArray("parts");
+        ObjectNode inline = parts.addObject().putObject("inlineData");
+        inline.put("mimeType", mimeType);
+        inline.put("data", Base64.getEncoder().encodeToString(photo));
+        parts.addObject().put("text", instruction);
+        JsonNode res = postWithFallback(props.chatModel(), ":generateContent", body);
+        StringBuilder out = new StringBuilder();
+        for (JsonNode part : res.path("candidates").path(0).path("content").path("parts")) {
+            out.append(part.path("text").asText(""));
+        }
+        if (out.isEmpty()) throw new AiException("The AI could not describe the photo.");
+        return out.toString().trim();
+    }
+
+    /** Sends a photo with an instruction and returns the redrawn picture (needs a paid plan). */
     public Image editImage(byte[] photo, String mimeType, String instruction) {
         ObjectNode body = json.createObjectNode();
         ArrayNode parts = body.putArray("contents").addObject().putArray("parts");
@@ -96,7 +145,7 @@ public class GeminiClient {
         try {
             res = postWithFallback(props.imageModel(), ":generateContent", body);
         } catch (AiException e) {
-            if (e.status == 429) throw new AiException("AI image generation needs billing turned on for your Gemini key (it is not in the free plan).", 429);
+            if (e.status == 429) throw new AiException("AI image editing needs billing turned on for your Gemini key (it is not in the free plan).", 429);
             throw e;
         }
         for (JsonNode part : res.path("candidates").path(0).path("content").path("parts")) {
@@ -138,7 +187,7 @@ public class GeminiClient {
         try {
             String raw = http.post()
                     // Full URL: a bare "model:method" would be read as a URL scheme.
-                    .uri(java.net.URI.create(BASE + path))
+                    .uri(URI.create(BASE + path))
                     .header("x-goog-api-key", props.apiKey())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(json.writeValueAsString(body))

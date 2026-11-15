@@ -47,6 +47,15 @@ class RagTest {
     }
 
     @Test
+    void imageRequestsAreRecognised() {
+        assertThat(ChatService.imagePrompt("IMAGE: a cat in **anime** style")).isEqualTo("a cat in anime style");
+        assertThat(ChatService.imagePrompt("**IMAGE:** a red car")).isEqualTo("a red car");
+        assertThat(ChatService.imagePrompt("Here is an IMAGE: idea")).isNull();
+        assertThat(com.mitu.ai.ai.FreeImageClient.url("a cat & dog", 512, 512))
+                .startsWith("https://image.pollinations.ai/prompt/a%20cat%20%26%20dog?width=512&height=512&nologo=true&seed=");
+    }
+
+    @Test
     void cosineSimilarity() {
         assertThat(VectorStore.cosine(new float[] {1, 0}, new float[] {1, 0})).isEqualTo(1.0);
         assertThat(VectorStore.cosine(new float[] {1, 0}, new float[] {0, 1})).isEqualTo(0.0);
@@ -72,7 +81,7 @@ class RagTest {
         assertThat(info.pages()).isEqualTo(2);
         assertThat(info.smartSearch()).isFalse();
 
-        ChatService.Reply reply = new ChatService(offlineAi, docs).ask("s1", "How many days of paid leave?");
+        ChatService.Reply reply = new ChatService(offlineAi, docs, new com.mitu.ai.ai.WikipediaClient(json)).ask("s1", "How many days of paid leave?");
         assertThat(reply.mode()).isEqualTo("offline");
         assertThat(reply.answer()).contains("24 days");
         assertThat(reply.sources().get(0).page()).isEqualTo(2);
@@ -100,7 +109,7 @@ class RagTest {
     @Test
     void offlineChatWithNoDocumentsGreets() {
         DocumentService docs = new DocumentService(offlineAi, new VectorStore(null, json));
-        ChatService.Reply reply = new ChatService(offlineAi, docs).ask("s", "hello");
+        ChatService.Reply reply = new ChatService(offlineAi, docs, new com.mitu.ai.ai.WikipediaClient(json)).ask("s", "hello");
         assertThat(reply.answer()).contains("MiTu");
         assertThat(reply.sources()).isEmpty();
     }

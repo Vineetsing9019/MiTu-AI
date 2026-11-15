@@ -1,10 +1,15 @@
 package com.mitu.ai.chat;
 
 import com.mitu.ai.ai.AiException;
+import com.mitu.ai.ai.FreeImageClient;
 import com.mitu.ai.ai.GeminiClient;
 import com.mitu.ai.ai.GeminiClient.Turn;
+import com.mitu.ai.ai.GeminiClient.WebSource;
+import com.mitu.ai.ai.WikipediaClient;
 import com.mitu.ai.rag.DocumentService;
 import com.mitu.ai.rag.VectorStore.Hit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.ZoneId;
@@ -14,19 +19,26 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
- * MiTu's chat. Retrieval-augmented generation: find the most relevant pieces of the
- * user's documents, give them to the AI with the question, and return the answer with
- * its sources. Without an AI key (or when the AI is unavailable) MiTu still answers,
- * by quoting the best-matching passages.
+ * MiTu's chat. Retrieval-augmented generation over the user's documents, plus:
+ * Google Search grounding (or Wikipedia when that isn't available) for facts,
+ * and free picture generation for "draw me…" requests. Every answer comes back
+ * with its sources. Without an AI key MiTu still answers by quoting the best passages.
  */
 @Service
 public class ChatService {
+
+    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     static final int TOP_K = 5;
     private static final int HISTORY_TURNS = 8;
@@ -42,14 +54,20 @@ public class ChatService {
             date, day or time, and for "how many days until..." style questions.
 
             How to answer:
+            - If the user asks you to draw, create, generate, make or show an image, picture, photo,
+              drawing, logo, poster, wallpaper or any art, reply with exactly ONE line and nothing else:
+              IMAGE: <a vivid, detailed English description of the picture to paint, including its style>
             - If CONTEXT passages from the user's documents are given and they answer the question,
               answer from them and cite the passages you used like [1] or [2].
             - If the question is clearly about the user's documents but the context doesn't contain
               the answer, say you couldn't find it in their documents.
-            - For everything else (greetings, dates, general facts, coding, studies, advice), just
-              answer helpfully from your own knowledge. Don't mention "context" or "documents" then.
+            - For facts that may be recent or that you aren't sure of (news, people, places, prices,
+              sports, events), look them up with Google Search when it is available. If WEB passages
+              are given, use them and cite them like [W1] or [W2].
+            - For everything else (greetings, general knowledge, coding, studies, advice), just answer
+              helpfully. Don't mention "context", "passages" or "documents" then.
             - Keep answers short and clear: a direct answer first, then bullet points if useful.
-            - Never invent page numbers, names or figures.""";
+            - Never invent page numbers, names, links or figures.""";
 
     /** Below this similarity a passage is not really about the question, so it isn't used. */
     static final double MIN_SIMILARITY = 0.45;
@@ -57,18 +75,30 @@ public class ChatService {
     /** How much of the latest document is sent when a question matches nothing (~10,000 characters). */
     static final int WHOLE_DOC_CHUNKS = 12;
 
+    /** After Google Search grounding is refused, use Wikipedia for this long before trying again. */
+    private static final long GROUNDING_RETRY_MS = 10 * 60 * 1000;
+
     public static String systemPrompt(ZonedDateTime now) {
         return SYSTEM.formatted(NOW.format(now));
     }
 
-    /** One source shown under an answer. */
+    /** One document source shown under an answer. */
     public record Source(int n, String document, int page, String snippet, double score) {}
 
-    /** MiTu's reply. mode: "ai" (from documents), "general" (AI's own knowledge) or "offline" (quoted passages). */
-    public record Reply(String answer, List<Source> sources, String mode) {}
+    /**
+     * MiTu's reply. mode: "ai" (from documents), "web" (looked up online), "general" (AI's own
+     * knowledge), "image" (a generated picture at {@code image}) or "offline" (quoted passages).
+     */
+    public record Reply(String answer, List<Source> sources, String mode, List<WebSource> web, String image) {
+        public Reply(String answer, List<Source> sources, String mode) {
+            this(answer, sources, mode, List.of(), null);
+        }
+    }
 
     private final GeminiClient ai;
     private final DocumentService documents;
+    private final WikipediaClient wikipedia;
+    private volatile long groundingOffUntil = 0;
     private final Map<String, Deque<Turn>> sessions = Collections.synchronizedMap(
             new LinkedHashMap<>(16, 0.75f, true) {
                 @Override
@@ -77,9 +107,10 @@ public class ChatService {
                 }
             });
 
-    public ChatService(GeminiClient ai, DocumentService documents) {
+    public ChatService(GeminiClient ai, DocumentService documents, WikipediaClient wikipedia) {
         this.ai = ai;
         this.documents = documents;
+        this.wikipedia = wikipedia;
     }
 
     public Reply ask(String sessionId, String question) {
@@ -100,34 +131,95 @@ public class ChatService {
         if (!ai.isConfigured()) return offline(q, hits, sources, null);
 
         Deque<Turn> history = sessions.computeIfAbsent(sessionId == null ? "default" : sessionId, k -> new ArrayDeque<>());
-        List<Turn> turns;
+        List<Turn> past;
         synchronized (history) {
-            turns = new ArrayList<>(history);
+            past = new ArrayList<>(history);
         }
         // Tell the AI which files exist, so "my resume" or "he" makes sense to it.
-        String files = documents.list().stream().map(d -> d.name()).collect(java.util.stream.Collectors.joining(", "));
+        String files = documents.list().stream().map(d -> d.name()).collect(Collectors.joining(", "));
         String prompt = promptWithContext(q, hits);
         if (!files.isEmpty()) prompt = "(Files the user has uploaded: " + files + ")\n\n" + prompt;
-        turns.add(new Turn("user", prompt));
+        String system = systemPrompt(ZonedDateTime.now(ZONE));
+
         try {
-            String answer = ai.generate(systemPrompt(ZonedDateTime.now(ZONE)), turns);
+            String answer;
+            List<WebSource> web;
+            if (System.currentTimeMillis() >= groundingOffUntil) {
+                try {
+                    GeminiClient.Answer a = ai.generate(system, withTurn(past, prompt), true);
+                    answer = a.text();
+                    web = a.web();
+                } catch (AiException e) {
+                    if (e.status != 400 && e.status != 403 && e.status != 429) throw e;
+                    log.info("Google Search grounding unavailable ({}); using Wikipedia for a while", e.status);
+                    groundingOffUntil = System.currentTimeMillis() + GROUNDING_RETRY_MS;
+                    GeminiClient.Answer a = withWikipedia(system, past, prompt, q);
+                    answer = a.text();
+                    web = a.web();
+                }
+            } else {
+                GeminiClient.Answer a = withWikipedia(system, past, prompt, q);
+                answer = a.text();
+                web = a.web();
+            }
+
+            String imagePrompt = imagePrompt(answer);
+            String remembered = imagePrompt != null ? "(I painted a picture: " + imagePrompt + ")" : answer;
             synchronized (history) {
                 history.addLast(new Turn("user", q));
-                history.addLast(new Turn("model", answer));
+                history.addLast(new Turn("model", remembered));
                 while (history.size() > HISTORY_TURNS * 2) history.removeFirst();
             }
+            if (imagePrompt != null) {
+                return new Reply("Here's your picture 🎨 _" + imagePrompt + "_", List.of(), "image", List.of(),
+                        FreeImageClient.url(imagePrompt, 768, 768));
+            }
             List<Source> used = cited(answer, sources);
-            return new Reply(answer, used, used.isEmpty() ? "general" : "ai");
+            String mode = !used.isEmpty() ? "ai" : !web.isEmpty() ? "web" : "general";
+            return new Reply(answer, used, mode, web, null);
         } catch (AiException e) {
             return offline(q, hits, sources, e.getMessage());
         }
     }
 
+    /** Answers without Google Search, giving the AI Wikipedia summaries for the question. */
+    private GeminiClient.Answer withWikipedia(String system, List<Turn> past, String prompt, String q) {
+        List<WikipediaClient.Article> articles = q.length() >= 12 ? wikipedia.lookup(q, 2) : List.of();
+        if (articles.isEmpty()) return ai.generate(system, withTurn(past, prompt), false);
+        StringBuilder sb = new StringBuilder("WEB (Wikipedia):\n");
+        for (int i = 0; i < articles.size(); i++) {
+            WikipediaClient.Article a = articles.get(i);
+            sb.append("[W").append(i + 1).append("] ").append(a.title()).append(": ").append(a.summary()).append("\n\n");
+        }
+        String answer = ai.generate(system, withTurn(past, sb + prompt), false).text();
+        List<WebSource> used = new ArrayList<>();
+        for (int i = 0; i < articles.size(); i++) {
+            if (answer.contains("[W" + (i + 1) + "]")) used.add(new WebSource("Wikipedia: " + articles.get(i).title(), articles.get(i).url()));
+        }
+        return new GeminiClient.Answer(answer, used);
+    }
+
+    private static List<Turn> withTurn(List<Turn> past, String prompt) {
+        List<Turn> turns = new ArrayList<>(past);
+        turns.add(new Turn("user", prompt));
+        return turns;
+    }
+
+    private static final Pattern IMAGE_LINE = Pattern.compile("^\\W*IMAGE\\W*:\\s*(.+)$", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /** The picture description when the AI decided to paint ("IMAGE: …"), else null. */
+    public static String imagePrompt(String answer) {
+        Matcher m = IMAGE_LINE.matcher(answer.trim());
+        if (!m.matches()) return null;
+        String p = m.group(1).replaceAll("[*_`]", "").replaceAll("\\s+", " ").trim();
+        return p.isEmpty() ? null : p;
+    }
+
     /** Only the sources the answer actually cites ([1], [2]...); none when it answered from general knowledge. */
     public static List<Source> cited(String answer, List<Source> sources) {
         // Models write citations as [1], [1][2], [1, 2] or [1-3]; collect every number used.
-        java.util.Set<Integer> used = new java.util.HashSet<>();
-        java.util.regex.Matcher m = CITATION.matcher(answer);
+        Set<Integer> used = new HashSet<>();
+        Matcher m = CITATION.matcher(answer);
         while (m.find()) {
             for (String part : m.group(1).split(",")) {
                 String[] range = part.trim().split("[-–]");
@@ -139,8 +231,7 @@ public class ChatService {
         return sources.stream().filter(s -> used.contains(s.n())).toList();
     }
 
-    private static final java.util.regex.Pattern CITATION =
-            java.util.regex.Pattern.compile("\\[(\\d+(?:\\s*[-–,]\\s*\\d+)*)\\]");
+    private static final Pattern CITATION = Pattern.compile("\\[(\\d+(?:\\s*[-–,]\\s*\\d+)*)\\]");
 
     public void reset(String sessionId) {
         if (sessionId != null) sessions.remove(sessionId);
@@ -173,7 +264,7 @@ public class ChatService {
         StringBuilder sb = new StringBuilder();
         if (why != null) sb.append("(").append(why).append(" Showing the best matches from your documents instead.)\n\n");
         if (documents.store().isEmpty()) {
-            sb.append("Hi, I'm MiTu! Upload a PDF in the Documents tab and ask me anything about it. ")
+            sb.append("Hi, I'm MiTu! Attach a PDF with 📎 and ask me anything about it. ")
               .append("Add a Gemini API key to unlock full AI answers.");
         } else if (hits.isEmpty()) {
             sb.append("I couldn't find anything about \"").append(q).append("\" in your documents. Try other words.");

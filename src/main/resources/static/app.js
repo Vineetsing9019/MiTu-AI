@@ -62,7 +62,12 @@ function markdown(text) {
   const lines = esc(text).split('\n');
   let html = '', list = false;
   for (const raw of lines) {
-    const line = raw.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    const line = raw
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,!?;:])/g,'$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
+      .replace(/(^|\s)_([^_]+)_(?=\s|$|[.,!?])/g, '$1<i>$2</i>');
     const head = line.match(/^\s*#{1,6}\s+(.*)/);
     if (head) { if (list) { html += '</ul>'; list = false; } html += `<p class="h"><b>${head[1]}</b></p>`; continue; }
     const item = line.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)/);
@@ -98,9 +103,32 @@ async function ask(question) {
         .map((s) => `<span class="source" title="${esc(s.snippet)}">[${s.n}] ${esc(s.document)} · p.${s.page}</span>`)
         .join('') + '</div>';
     }
-    const label = { ai: 'Answered by AI from your documents', general: 'Answered by AI', offline: 'Offline answer: best matching passages' };
+    if (data.image) {
+      html += `<div class="gen"><div class="gen-busy"><div class="spinner"></div>Painting your picture… (about 10 s)</div>
+        <img alt="Picture made by MiTu" src="${esc(data.image)}"></div>
+        <a class="secondary small-btn" href="${esc(data.image)}" target="_blank" rel="noopener">Open full size</a>`;
+    }
+    if (data.web?.length) {
+      html += '<div class="sources">' + data.web
+        .map((w) => `<a class="source web" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">🌐 ${esc(w.title)}</a>`)
+        .join('') + '</div>';
+    }
+    const label = {
+      ai: data.web?.length ? 'Answered by AI from your documents and the web' : 'Answered by AI from your documents',
+      web: 'Answered by AI with a web search',
+      general: 'Answered by AI',
+      image: 'Picture made with AI (free: Pollinations.ai)',
+      offline: 'Offline answer: best matching passages',
+    };
     html += `<span class="mode">${label[data.mode] || ''}</span>`;
-    typing.querySelector('.bubble').innerHTML = html;
+    const bubble = typing.querySelector('.bubble');
+    bubble.innerHTML = html;
+    const img = bubble.querySelector('.gen img');
+    if (img) {
+      const busy = bubble.querySelector('.gen-busy');
+      img.addEventListener('load', () => { busy.remove(); $('#messages').scrollTop = $('#messages').scrollHeight; });
+      img.addEventListener('error', () => { busy.textContent = '⚠ The free picture service is busy. Ask me again in a moment.'; img.remove(); });
+    }
   } catch (e) {
     typing.querySelector('.bubble').textContent = '⚠ ' + e.message;
   } finally {
@@ -238,7 +266,9 @@ $('#makeArt').addEventListener('click', async () => {
       const res = await fetch('/api/art', { method: 'POST', body: form });
       if (res.ok) {
         blob = await res.blob();
-        $('#artNote').textContent = '✨ Painted by the AI image model.';
+        $('#artNote').textContent = res.headers.get('X-Mitu-Engine') === 'free'
+          ? '✨ Free AI art: Gemini described your photo, then Pollinations.ai painted it in this style. (A new painting of the scene, not an edit of your exact photo.)'
+          : '✨ Painted by the AI image model from your photo.';
       } else {
         const err = await res.json().catch(() => ({}));
         $('#artNote').textContent = `${err.message || 'AI art failed.'} Used MiTu's offline filter instead.`;
