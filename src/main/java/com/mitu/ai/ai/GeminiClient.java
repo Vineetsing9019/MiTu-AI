@@ -42,7 +42,7 @@ public class GeminiClient {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10_000);
         factory.setReadTimeout(120_000);
-        this.http = RestClient.builder().baseUrl(BASE).requestFactory(factory).build();
+        this.http = RestClient.builder().requestFactory(factory).build();
     }
 
     public boolean isConfigured() {
@@ -60,7 +60,7 @@ public class GeminiClient {
             c.putArray("parts").addObject().put("text", t.text());
         }
         body.putObject("generationConfig").put("temperature", 0.3);
-        JsonNode res = post(props.chatModel() + ":generateContent", body);
+        JsonNode res = postWithFallback(props.chatModel(), ":generateContent", body);
         StringBuilder out = new StringBuilder();
         for (JsonNode part : res.path("candidates").path(0).path("content").path("parts")) {
             out.append(part.path("text").asText(""));
@@ -92,7 +92,13 @@ public class GeminiClient {
         ArrayNode modalities = body.putObject("generationConfig").putArray("responseModalities");
         modalities.add("TEXT");
         modalities.add("IMAGE");
-        JsonNode res = post(props.imageModel() + ":generateContent", body);
+        JsonNode res;
+        try {
+            res = postWithFallback(props.imageModel(), ":generateContent", body);
+        } catch (AiException e) {
+            if (e.status == 429) throw new AiException("AI image generation needs billing turned on for your Gemini key (it is not in the free plan).", 429);
+            throw e;
+        }
         for (JsonNode part : res.path("candidates").path(0).path("content").path("parts")) {
             JsonNode data = part.has("inlineData") ? part.get("inlineData") : part.path("inline_data");
             if (data.has("data")) {
@@ -103,11 +109,36 @@ public class GeminiClient {
         throw new AiException("The image model did not return a picture.");
     }
 
+    /**
+     * Tries each model in a comma-separated list ("primary,backup") until one answers.
+     * Google retires and rate-limits models often, so a busy (503), limited (429) or
+     * retired (404) model falls through to the next one instead of failing the user.
+     */
+    JsonNode postWithFallback(String models, String method, ObjectNode body) {
+        AiException last = null;
+        for (String model : models.split(",")) {
+            if (model.isBlank()) continue;
+            try {
+                return post(model.trim() + method, body);
+            } catch (AiException e) {
+                last = e;
+                if (e.status != 404 && e.status != 429 && e.status != 503) throw e;
+            }
+        }
+        throw last != null ? last : new AiException("No AI model is configured.");
+    }
+
+    /** The first model of a comma-separated list, for display. */
+    public static String primary(String models) {
+        return models == null ? "" : models.split(",")[0].trim();
+    }
+
     private JsonNode post(String path, ObjectNode body) {
         if (!isConfigured()) throw new AiException("No Gemini API key is set.");
         try {
             String raw = http.post()
-                    .uri(path)
+                    // Full URL: a bare "model:method" would be read as a URL scheme.
+                    .uri(java.net.URI.create(BASE + path))
                     .header("x-goog-api-key", props.apiKey())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(json.writeValueAsString(body))
@@ -123,7 +154,7 @@ public class GeminiClient {
                 case 429 -> "Free AI limit reached. Wait a minute and try again.";
                 default -> "The AI service is busy. Please try again.";
             };
-            throw new AiException(why);
+            throw new AiException(why, e.getStatusCode().value());
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {

@@ -52,8 +52,8 @@ public class ApiController {
         return Map.of(
                 "name", "MiTu AI Assistant",
                 "aiOn", ai.isConfigured(),
-                "chatModel", props.chatModel(),
-                "imageModel", props.imageModel(),
+                "chatModel", GeminiClient.primary(props.chatModel()),
+                "imageModel", GeminiClient.primary(props.imageModel()),
                 "documents", documents.list().size(),
                 "styles", art.styles());
     }

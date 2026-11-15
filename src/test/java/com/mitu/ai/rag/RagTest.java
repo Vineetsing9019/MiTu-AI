@@ -89,6 +89,14 @@ class RagTest {
         assertThat(reply.sources()).isEmpty();
     }
 
+    @Test
+    void onlyCitedSourcesAreShown() {
+        var a = new ChatService.Source(1, "a.pdf", 2, "x", 0.9);
+        var b = new ChatService.Source(2, "a.pdf", 1, "y", 0.5);
+        assertThat(ChatService.cited("You get 24 days [1].", List.of(a, b))).containsExactly(a);
+        assertThat(ChatService.cited("No citation here.", List.of(a, b))).containsExactly(a, b);
+    }
+
     /** Builds a small PDF with one page per string. */
     static byte[] pdf(String... pages) throws Exception {
         try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

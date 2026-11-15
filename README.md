@@ -61,7 +61,7 @@ flowchart LR
 2. **Chunk:** the text is cut into ~900-character pieces with a 150-character overlap, at sentence ends where possible, so no fact is split in half.
 3. **Embed:** each chunk becomes a 768-number vector (`gemini-embedding-001`) that captures its meaning.
 4. **Retrieve:** the question is embedded the same way. **Cosine similarity** finds the 5 closest chunks.
-5. **Generate:** those chunks are sent to `gemini-2.5-flash` with numbered tags (`[1] handbook.pdf, page 2`) and strict instructions: answer from the context, cite it, and never invent page numbers.
+5. **Generate:** those chunks are sent to `gemini-3.5-flash` with numbered tags (`[1] handbook.pdf, page 2`) and strict instructions: answer from the context, cite it, and never invent page numbers.
 6. **Show sources:** the page shows the citations, with the passage on hover.
 
 ### Design decisions
@@ -74,6 +74,8 @@ flowchart LR
 | Overlapping chunks | A sentence cut at a chunk edge still appears whole in the next chunk. |
 | Keyword fallback (TF-IDF) | Search still works with no API key or when the free quota runs out. |
 | Art via the browser filter when offline | The art feature always produces something, even on a live demo with no network to the AI. |
+| Model fallback chain | Google retires and rate-limits models often. A model that is retired (404), busy (503) or over quota (429) falls through to the next one in the list, so users never see the outage. |
+| Only cited sources shown | The chips under an answer are the passages the AI actually used (`[1]`, `[2]`), not everything the search returned. |
 | Token-bucket rate limit | Smooth limits (20/min per visitor by default) instead of hard resets, and cheap: O(1) per request. |
 
 ---
@@ -87,12 +89,16 @@ git clone https://github.com/Vineetsing9019/MiTu-AI.git
 cd MiTu-AI
 
 # Optional but recommended: a free key from https://aistudio.google.com/apikey
-export GEMINI_API_KEY=your_key_here          # Windows PowerShell: $env:GEMINI_API_KEY="your_key_here"
+# Either put it in a .env file in the project folder (git-ignored):
+echo "GEMINI_API_KEY=your_key_here" > .env
+# or set it in the shell: export GEMINI_API_KEY=your_key_here   (PowerShell: $env:GEMINI_API_KEY="your_key_here")
 
 ./mvnw spring-boot:run                        # Windows: mvnw.cmd spring-boot:run
 ```
 
 Open **http://localhost:8080**. Without a key, the badge says *Offline mode* and everything still works with the fallbacks.
+
+> **Free vs paid Gemini:** chat and embeddings work on the free plan. AI image generation needs billing turned on in Google AI Studio (a few rupees per image). Without it, MiTu says so and paints the picture with its offline filter.
 
 ### With Docker
 
@@ -115,9 +121,9 @@ docker run -p 8080:8080 -e GEMINI_API_KEY=your_key_here mitu-ai
 | Variable | Default | What it does |
 |---|---|---|
 | `GEMINI_API_KEY` | *(empty: offline mode)* | Google AI Studio key |
-| `GEMINI_CHAT_MODEL` | `gemini-2.5-flash` | Model that writes answers |
+| `GEMINI_CHAT_MODEL` | `gemini-3.5-flash,gemini-flash-lite-latest,gemini-flash-latest` | Models that write answers, tried in order |
 | `GEMINI_EMBED_MODEL` | `gemini-embedding-001` | Model that makes embeddings |
-| `GEMINI_IMAGE_MODEL` | `gemini-2.5-flash-image` | Model that redraws photos |
+| `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image,gemini-2.5-flash-image` | Models that redraw photos, tried in order |
 | `MITU_RATE_LIMIT` | `20` | AI requests per visitor per minute |
 | `MITU_DATA_DIR` | `data` | Where the document index is saved |
 | `PORT` | `8080` | HTTP port |
@@ -142,7 +148,7 @@ Errors always come back as `{"message": "..."}` with a fitting status code (`400
 ./mvnw test
 ```
 
-11 tests cover chunking, cosine similarity, vector ranking, a real PDF going through upload → search → cited answer → restart → delete, input validation, the offline art signal and the rate limiter's refill. GitHub Actions runs them, plus a Docker build, on every push.
+12 tests cover chunking, cosine similarity, vector ranking, citation filtering, a real PDF going through upload → search → cited answer → restart → delete, input validation, the offline art signal and the rate limiter's refill. GitHub Actions runs them, plus a Docker build, on every push.
 
 ## Project structure
 

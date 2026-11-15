@@ -81,10 +81,16 @@ public class ChatService {
                 history.addLast(new Turn("model", answer));
                 while (history.size() > HISTORY_TURNS * 2) history.removeFirst();
             }
-            return new Reply(answer, sources, "ai");
+            return new Reply(answer, cited(answer, sources), "ai");
         } catch (AiException e) {
             return offline(q, hits, sources, e.getMessage());
         }
+    }
+
+    /** Only the sources the answer actually cites ([1], [2]…); all of them if it cites none. */
+    public static List<Source> cited(String answer, List<Source> sources) {
+        List<Source> used = sources.stream().filter(s -> answer.contains("[" + s.n() + "]")).toList();
+        return used.isEmpty() ? sources : used;
     }
 
     public void reset(String sessionId) {
