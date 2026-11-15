@@ -64,6 +64,16 @@ class RagTest {
     }
 
     @Test
+    void freshFactsAndNewsEditions() {
+        assertThat(com.mitu.ai.ai.NewsClient.isFreshFact("Who is the current President of the United States?")).isTrue();
+        assertThat(com.mitu.ai.ai.NewsClient.isFreshFact("Who won the last FIFA World Cup?")).isTrue();
+        assertThat(com.mitu.ai.ai.NewsClient.isFreshFact("What is the capital of Australia?")).isFalse();
+        assertThat(com.mitu.ai.ai.NewsClientAccess.feed("What is happening in the world today?")).contains("topic/WORLD");
+        assertThat(com.mitu.ai.ai.NewsClientAccess.feed("Latest news about the USA")).contains("q=usa").contains("gl=US");
+        assertThat(com.mitu.ai.ai.NewsClientAccess.feed("Latest news about Mumbai")).contains("gl=IN");
+    }
+
+    @Test
     void cosineSimilarity() {
         assertThat(VectorStore.cosine(new float[] {1, 0}, new float[] {1, 0})).isEqualTo(1.0);
         assertThat(VectorStore.cosine(new float[] {1, 0}, new float[] {0, 1})).isEqualTo(0.0);

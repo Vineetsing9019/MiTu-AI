@@ -52,6 +52,9 @@ public class ChatService {
             You are MiTu, a friendly, smart and precise AI assistant made by Vineetsing Girase.
             Right now it is %s (India Standard Time). Use this for any question about today's
             date, day or time, and for "how many days until..." style questions.
+            Your built-in knowledge ends some time before today, so events dated before today have
+            already happened even if you don't remember them. When WEB passages give newer facts,
+            trust them over your memory.
 
             How to answer:
             - If the user asks you to draw, create, generate, make or show an image, picture, photo,
@@ -210,11 +213,21 @@ public class ChatService {
             }
         }
         if (found.isEmpty() && q.length() >= 12) {
-            List<WikipediaClient.Article> articles = wikipedia.lookup(q, 2);
+            List<WikipediaClient.Article> articles = wikipedia.lookup(q, 3);
             if (!articles.isEmpty()) sb.append("WEB (Wikipedia):\n");
             for (WikipediaClient.Article a : articles) {
                 found.add(new WebSource("Wikipedia: " + a.title(), a.url()));
                 sb.append("[W").append(found.size()).append("] ").append(a.title()).append(": ").append(a.summary()).append("\n\n");
+            }
+            // "Who is the current…", "who won the last…": add today's headlines, which are newer than Wikipedia.
+            if (com.mitu.ai.ai.NewsClient.isFreshFact(q)) {
+                List<com.mitu.ai.ai.NewsClient.Headline> headlines = news.headlines(q, 5);
+                if (!headlines.isEmpty()) sb.append("WEB (Google News headlines, newest first):\n");
+                for (com.mitu.ai.ai.NewsClient.Headline h : headlines) {
+                    found.add(new WebSource(h.source().isBlank() ? "Google News" : h.source(), h.url()));
+                    sb.append("[W").append(found.size()).append("] ").append(h.title())
+                      .append(h.published().isBlank() ? "" : " (" + h.published() + ")").append("\n");
+                }
             }
         }
         if (found.isEmpty()) return ai.generate(system, withTurn(past, prompt), false);

@@ -29,7 +29,7 @@ public class NewsClient {
     private static final Pattern NEWSY = Pattern.compile(
             "\\b(news|headlines?|latest|this week|current affairs|breaking|happening|score|match|election|stock market|weather)\\b");
     private static final Pattern FILLER = Pattern.compile(
-            "\\b(what|what's|whats|is|are|the|in|on|of|a|an|me|tell|give|show|please|today|todays|today's|latest|news|headlines?|any|about|happening|going|top|current|now)\\b");
+            "\\b(what|what's|whats|who|who's|is|are|was|were|the|in|on|of|a|an|me|tell|give|show|please|today|todays|today's|latest|news|headlines?|any|about|happening|going|top|current|currently|now|present|recent|recently|did|does|do)\\b");
 
     /** One headline. */
     public record Headline(String title, String source, String url, String published) {}
@@ -41,6 +41,30 @@ public class NewsClient {
         factory.setConnectTimeout(5_000);
         factory.setReadTimeout(8_000);
         this.http = org.springframework.web.client.RestClient.builder().requestFactory(factory).build();
+    }
+
+    private static final Pattern FRESH = Pattern.compile(
+            "\\b(current|currently|now|present|incumbent|latest|last|recent|recently|won|wins|winner|champions?|who is the|who's the|this year|20[2-3]\\d)\\b");
+    private static final Pattern INDIA = Pattern.compile(
+            "\\b(india|indian|delhi|mumbai|maharashtra|bengaluru|bangalore|chennai|kolkata|hyderabad|pune|gujarat|kerala|tamil|karnataka|bihar|punjab|rajasthan|bollywood|ipl|bcci|modi|rupee|sensex|nifty)\\b");
+    private static final Pattern WORLD = Pattern.compile("\\b(world|international|global|worldwide|abroad)\\b");
+
+    /** True for factual questions whose answer can change over time ("who is the current…", "who won…"). */
+    public static boolean isFreshFact(String q) {
+        return FRESH.matcher(q.toLowerCase(Locale.ROOT)).find();
+    }
+
+    /** Which Google News feed to read: India edition, international edition, or the World section. */
+    static String feedUrl(String question) {
+        String lower = question.toLowerCase(Locale.ROOT);
+        String topic = topic(question);
+        boolean india = INDIA.matcher(lower).find();
+        String edition = india ? "hl=en-IN&gl=IN&ceid=IN:en" : "hl=en-US&gl=US&ceid=US:en";
+        if (WORLD.matcher(lower).find() && topic.replaceAll(WORLD.pattern(), "").isBlank()) {
+            return "https://news.google.com/rss/headlines/section/topic/WORLD?" + edition;
+        }
+        if (topic.isEmpty()) return "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en";
+        return "https://news.google.com/rss/search?q=" + URLEncoder.encode(topic, StandardCharsets.UTF_8) + "&" + edition;
     }
 
     /** True for questions that want current events rather than settled facts. */
@@ -56,10 +80,7 @@ public class NewsClient {
 
     /** Up to {@code max} current headlines for the question's topic (top stories when there is none). */
     public List<Headline> headlines(String question, int max) {
-        String topic = topic(question);
-        String url = topic.isEmpty()
-                ? "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en"
-                : "https://news.google.com/rss/search?q=" + URLEncoder.encode(topic, StandardCharsets.UTF_8) + "&hl=en-IN&gl=IN&ceid=IN:en";
+        String url = feedUrl(question);
         List<Headline> out = new ArrayList<>();
         try {
             byte[] xml = http.get().uri(URI.create(url)).retrieve().body(byte[].class);
