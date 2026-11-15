@@ -61,8 +61,10 @@ public class ChatService {
               answer from them and cite the passages you used like [1] or [2].
             - If the question is clearly about the user's documents but the context doesn't contain
               the answer, say you couldn't find it in their documents.
-            - If WEB passages (news headlines or Wikipedia) are given and they are relevant, answer
-              from them and cite them like [W1] or [W2]. For news, list the main headlines briefly.
+            - If WEB passages (news headlines or Wikipedia) are given and they are relevant, use them
+              and cite them like [W1] or [W2]. For news, list the main headlines briefly. If they only
+              partly answer, combine them with your own knowledge and give a direct answer; never
+              reply with "the text doesn't say" or "the provided information".
             - Never say you will search, look something up or check later: answer now. If a fact may
               have changed recently and no WEB passage covers it, give what you know and say it may be
               out of date.
@@ -217,9 +219,16 @@ public class ChatService {
         }
         if (found.isEmpty()) return ai.generate(system, withTurn(past, prompt), false);
         String answer = ai.generate(system, withTurn(past, sb + "\n" + prompt), false).text();
+        // Citations come as [W1], [W1][W2] or [W1, W2]: collect every W number.
+        Set<Integer> nums = new HashSet<>();
+        Matcher m = WEB_CITATION.matcher(answer);
+        while (m.find()) {
+            Matcher n = Pattern.compile("\\d+").matcher(m.group());
+            while (n.find()) nums.add(Integer.parseInt(n.group()));
+        }
         List<WebSource> used = new ArrayList<>();
         for (int i = 0; i < found.size(); i++) {
-            if (answer.contains("[W" + (i + 1) + "]")) used.add(found.get(i));
+            if (nums.contains(i + 1)) used.add(found.get(i));
         }
         return new GeminiClient.Answer(answer, used);
     }
@@ -255,6 +264,8 @@ public class ChatService {
         }
         return sources.stream().filter(s -> used.contains(s.n())).toList();
     }
+
+    private static final Pattern WEB_CITATION = Pattern.compile("\\[W\\d+(?:\\s*,\\s*W?\\d+)*\\]");
 
     private static final Pattern CITATION = Pattern.compile("\\[(\\d+(?:\\s*[-–,]\\s*\\d+)*)\\]");
 
