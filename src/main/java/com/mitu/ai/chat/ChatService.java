@@ -61,11 +61,14 @@ public class ChatService {
               answer from them and cite the passages you used like [1] or [2].
             - If the question is clearly about the user's documents but the context doesn't contain
               the answer, say you couldn't find it in their documents.
-            - For facts that may be recent or that you aren't sure of (news, people, places, prices,
-              sports, events), look them up with Google Search when it is available. If WEB passages
-              are given, use them and cite them like [W1] or [W2].
+            - If WEB passages (news headlines or Wikipedia) are given and they are relevant, answer
+              from them and cite them like [W1] or [W2]. For news, list the main headlines briefly.
+            - Never say you will search, look something up or check later: answer now. If a fact may
+              have changed recently and no WEB passage covers it, give what you know and say it may be
+              out of date.
             - For everything else (greetings, general knowledge, coding, studies, advice), just answer
               helpfully. Don't mention "context", "passages" or "documents" then.
+            - Don't introduce yourself unless asked who you are.
             - Keep answers short and clear: a direct answer first, then bullet points if useful.
             - Never invent page numbers, names, links or figures.""";
 
@@ -98,6 +101,7 @@ public class ChatService {
     private final GeminiClient ai;
     private final DocumentService documents;
     private final WikipediaClient wikipedia;
+    private final com.mitu.ai.ai.NewsClient news;
     private volatile long groundingOffUntil = 0;
     private final Map<String, Deque<Turn>> sessions = Collections.synchronizedMap(
             new LinkedHashMap<>(16, 0.75f, true) {
@@ -107,10 +111,11 @@ public class ChatService {
                 }
             });
 
-    public ChatService(GeminiClient ai, DocumentService documents, WikipediaClient wikipedia) {
+    public ChatService(GeminiClient ai, DocumentService documents, WikipediaClient wikipedia, com.mitu.ai.ai.NewsClient news) {
         this.ai = ai;
         this.documents = documents;
         this.wikipedia = wikipedia;
+        this.news = news;
     }
 
     public Reply ask(String sessionId, String question) {
@@ -144,7 +149,11 @@ public class ChatService {
         try {
             String answer;
             List<WebSource> web;
-            if (System.currentTimeMillis() >= groundingOffUntil) {
+            if (com.mitu.ai.ai.NewsClient.isNewsQuestion(q)) {
+                GeminiClient.Answer a = withWikipedia(system, past, prompt, q);
+                answer = a.text();
+                web = a.web();
+            } else if (System.currentTimeMillis() >= groundingOffUntil) {
                 try {
                     GeminiClient.Answer a = ai.generate(system, withTurn(past, prompt), true);
                     answer = a.text();
@@ -182,19 +191,35 @@ public class ChatService {
         }
     }
 
-    /** Answers without Google Search, giving the AI Wikipedia summaries for the question. */
+    /**
+     * Answers without Google Search: news questions get current Google News headlines, other
+     * questions get Wikipedia summaries. The pages the answer cites ([W1]...) come back as links.
+     */
     private GeminiClient.Answer withWikipedia(String system, List<Turn> past, String prompt, String q) {
-        List<WikipediaClient.Article> articles = q.length() >= 12 ? wikipedia.lookup(q, 2) : List.of();
-        if (articles.isEmpty()) return ai.generate(system, withTurn(past, prompt), false);
-        StringBuilder sb = new StringBuilder("WEB (Wikipedia):\n");
-        for (int i = 0; i < articles.size(); i++) {
-            WikipediaClient.Article a = articles.get(i);
-            sb.append("[W").append(i + 1).append("] ").append(a.title()).append(": ").append(a.summary()).append("\n\n");
+        List<WebSource> found = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        if (com.mitu.ai.ai.NewsClient.isNewsQuestion(q)) {
+            List<com.mitu.ai.ai.NewsClient.Headline> headlines = news.headlines(q, 8);
+            if (!headlines.isEmpty()) sb.append("WEB (Google News headlines, newest first):\n");
+            for (com.mitu.ai.ai.NewsClient.Headline h : headlines) {
+                found.add(new WebSource(h.source().isBlank() ? "Google News" : h.source(), h.url()));
+                sb.append("[W").append(found.size()).append("] ").append(h.title())
+                  .append(h.published().isBlank() ? "" : " (" + h.published() + ")").append("\n");
+            }
         }
-        String answer = ai.generate(system, withTurn(past, sb + prompt), false).text();
+        if (found.isEmpty() && q.length() >= 12) {
+            List<WikipediaClient.Article> articles = wikipedia.lookup(q, 2);
+            if (!articles.isEmpty()) sb.append("WEB (Wikipedia):\n");
+            for (WikipediaClient.Article a : articles) {
+                found.add(new WebSource("Wikipedia: " + a.title(), a.url()));
+                sb.append("[W").append(found.size()).append("] ").append(a.title()).append(": ").append(a.summary()).append("\n\n");
+            }
+        }
+        if (found.isEmpty()) return ai.generate(system, withTurn(past, prompt), false);
+        String answer = ai.generate(system, withTurn(past, sb + "\n" + prompt), false).text();
         List<WebSource> used = new ArrayList<>();
-        for (int i = 0; i < articles.size(); i++) {
-            if (answer.contains("[W" + (i + 1) + "]")) used.add(new WebSource("Wikipedia: " + articles.get(i).title(), articles.get(i).url()));
+        for (int i = 0; i < found.size(); i++) {
+            if (answer.contains("[W" + (i + 1) + "]")) used.add(found.get(i));
         }
         return new GeminiClient.Answer(answer, used);
     }
