@@ -94,7 +94,13 @@ class RagTest {
         var a = new ChatService.Source(1, "a.pdf", 2, "x", 0.9);
         var b = new ChatService.Source(2, "a.pdf", 1, "y", 0.5);
         assertThat(ChatService.cited("You get 24 days [1].", List.of(a, b))).containsExactly(a);
-        assertThat(ChatService.cited("No citation here.", List.of(a, b))).containsExactly(a, b);
+        assertThat(ChatService.cited("No citation here.", List.of(a, b))).isEmpty();
+    }
+
+    @Test
+    void theAiIsToldTodaysDate() {
+        var now = java.time.ZonedDateTime.of(2026, 11, 15, 20, 31, 0, 0, java.time.ZoneId.of("Asia/Kolkata"));
+        assertThat(ChatService.systemPrompt(now)).contains("Sunday, 15 November 2026, 8:31 PM");
     }
 
     /** Builds a small PDF with one page per string. */

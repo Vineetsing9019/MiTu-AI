@@ -77,7 +77,8 @@ async function ask(question) {
         .map((s) => `<span class="source" title="${esc(s.snippet)}">[${s.n}] ${esc(s.document)} · p.${s.page}</span>`)
         .join('') + '</div>';
     }
-    html += `<span class="mode">${data.mode === 'ai' ? 'Answered by AI from your documents' : 'Offline answer: best matching passages'}</span>`;
+    const label = { ai: 'Answered by AI from your documents', general: 'Answered by AI', offline: 'Offline answer: best matching passages' };
+    html += `<span class="mode">${label[data.mode] || ''}</span>`;
     typing.querySelector('.bubble').innerHTML = html;
   } catch (e) {
     typing.querySelector('.bubble').textContent = '⚠ ' + e.message;

@@ -7,12 +7,16 @@ import com.mitu.ai.rag.DocumentService;
 import com.mitu.ai.rag.VectorStore.Hit;
 import org.springframework.stereotype.Service;
 
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -28,18 +32,36 @@ public class ChatService {
     private static final int HISTORY_TURNS = 8;
     private static final int MAX_SESSIONS = 500;
 
+    /** The AI has no clock, so every request tells it the current date and time (India). */
+    static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
+    private static final DateTimeFormatter NOW = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy, h:mm a", Locale.ENGLISH);
+
     static final String SYSTEM = """
-            You are MiTu, a friendly and precise AI assistant.
-            When CONTEXT passages are given, answer from them first. Cite the passages you used
-            like [1] or [2]. If the answer is not in the context, say so plainly, then you may add
-            general knowledge, clearly marked as "General knowledge:".
-            Keep answers short and clear: a direct answer first, then bullet points if useful.
-            Never invent page numbers, names or figures.""";
+            You are MiTu, a friendly, smart and precise AI assistant made by Vineetsing Girase.
+            Right now it is %s (India Standard Time). Use this for any question about today's
+            date, day or time, and for "how many days until..." style questions.
+
+            How to answer:
+            - If CONTEXT passages from the user's documents are given and they answer the question,
+              answer from them and cite the passages you used like [1] or [2].
+            - If the question is clearly about the user's documents but the context doesn't contain
+              the answer, say you couldn't find it in their documents.
+            - For everything else (greetings, dates, general facts, coding, studies, advice), just
+              answer helpfully from your own knowledge. Don't mention "context" or "documents" then.
+            - Keep answers short and clear: a direct answer first, then bullet points if useful.
+            - Never invent page numbers, names or figures.""";
+
+    /** Below this similarity a passage is not really about the question, so it isn't used. */
+    static final double MIN_SIMILARITY = 0.6;
+
+    public static String systemPrompt(ZonedDateTime now) {
+        return SYSTEM.formatted(NOW.format(now));
+    }
 
     /** One source shown under an answer. */
     public record Source(int n, String document, int page, String snippet, double score) {}
 
-    /** MiTu's reply. mode is "ai" (Gemini answered) or "offline" (quoted passages). */
+    /** MiTu's reply. mode: "ai" (from documents), "general" (AI's own knowledge) or "offline" (quoted passages). */
     public record Reply(String answer, List<Source> sources, String mode) {}
 
     private final GeminiClient ai;
@@ -59,7 +81,10 @@ public class ChatService {
 
     public Reply ask(String sessionId, String question) {
         String q = question.trim();
-        List<Hit> hits = documents.store().search(q, queryVector(q), TOP_K);
+        float[] qv = queryVector(q);
+        List<Hit> hits = documents.store().search(q, qv, TOP_K);
+        // Meaning search always returns something; drop passages that aren't really related.
+        if (qv != null) hits = hits.stream().filter(h -> h.chunk().vector() == null || h.score() >= MIN_SIMILARITY).toList();
         List<Source> sources = new ArrayList<>();
         for (int i = 0; i < hits.size(); i++) {
             Hit h = hits.get(i);
@@ -75,22 +100,22 @@ public class ChatService {
         }
         turns.add(new Turn("user", promptWithContext(q, hits)));
         try {
-            String answer = ai.generate(SYSTEM, turns);
+            String answer = ai.generate(systemPrompt(ZonedDateTime.now(ZONE)), turns);
             synchronized (history) {
                 history.addLast(new Turn("user", q));
                 history.addLast(new Turn("model", answer));
                 while (history.size() > HISTORY_TURNS * 2) history.removeFirst();
             }
-            return new Reply(answer, cited(answer, sources), "ai");
+            List<Source> used = cited(answer, sources);
+            return new Reply(answer, used, used.isEmpty() ? "general" : "ai");
         } catch (AiException e) {
             return offline(q, hits, sources, e.getMessage());
         }
     }
 
-    /** Only the sources the answer actually cites ([1], [2]…); all of them if it cites none. */
+    /** Only the sources the answer actually cites ([1], [2]...); none when it answered from general knowledge. */
     public static List<Source> cited(String answer, List<Source> sources) {
-        List<Source> used = sources.stream().filter(s -> answer.contains("[" + s.n() + "]")).toList();
-        return used.isEmpty() ? sources : used;
+        return sources.stream().filter(s -> answer.contains("[" + s.n() + "]")).toList();
     }
 
     public void reset(String sessionId) {
@@ -108,7 +133,7 @@ public class ChatService {
 
     static String promptWithContext(String question, List<Hit> hits) {
         if (hits.isEmpty()) {
-            return "No document passages matched this question.\n\nQUESTION: " + question;
+            return question; // nothing relevant in the documents: a normal chat question
         }
         StringBuilder sb = new StringBuilder("CONTEXT:\n");
         for (int i = 0; i < hits.size(); i++) {
