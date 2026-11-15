@@ -106,3 +106,4 @@ h2 { font-size: 16px; margin: 24px 0 10px; }
 @media (max-width: 480px) { .compare { grid-template-columns: 1fr; } .top { padding: 14px 16px; } main { padding: 16px; } .tabs { padding: 0 16px; } }
 
 footer { text-align: center; color: var(--muted); font-size: 12px; padding: 18px; }
+.bubble p.h { margin-top: 10px; }

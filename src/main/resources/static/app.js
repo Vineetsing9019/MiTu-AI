@@ -63,6 +63,8 @@ function markdown(text) {
   let html = '', list = false;
   for (const raw of lines) {
     const line = raw.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    const head = line.match(/^\s*#{1,6}\s+(.*)/);
+    if (head) { if (list) { html += '</ul>'; list = false; } html += `<p class="h"><b>${head[1]}</b></p>`; continue; }
     const item = line.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)/);
     if (item) { if (!list) { html += '<ul>'; list = true; } html += `<li>${item[1]}</li>`; continue; }
     if (list) { html += '</ul>'; list = false; }
