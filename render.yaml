@@ -1,0 +1,12 @@
+# One-click deploy on Render (free plan): New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: mitu-ai
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/status
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false   # paste your key in the Render dashboard, never in GitHub
+      - key: MITU_RATE_LIMIT
+        value: "20"

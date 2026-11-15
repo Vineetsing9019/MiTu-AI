@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiTu AI Assistant</title>
+  <meta name="description" content="MiTu AI: chat with your PDFs and turn photos into anime-style art.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%236d5dfc'/%3E%3Ctext x='32' y='42' font-size='30' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3EM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div>
+        <h1>MiTu <span>AI</span></h1>
+        <p>Your document & art assistant</p>
+      </div>
+    </div>
+    <div id="status" class="pill">Checking…</div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="chat" role="tab">💬 Chat</button>
+    <button class="tab" data-tab="docs" role="tab">📄 Documents</button>
+    <button class="tab" data-tab="art" role="tab">🎨 Anime Art</button>
+  </nav>
+
+  <main>
+    <!-- CHAT -->
+    <section id="chat" class="panel active">
+      <div id="messages" class="messages">
+        <div class="msg bot">
+          <div class="bubble">Hi, I'm <b>MiTu</b> 👋 Upload a PDF in <b>Documents</b>, then ask me anything about it. I'll answer and show the page I found it on.</div>
+        </div>
+      </div>
+      <div class="suggest" id="suggest">
+        <button>Summarise my document</button>
+        <button>What are the key points?</button>
+        <button>Make 5 interview questions from it</button>
+      </div>
+      <form id="ask" class="ask">
+        <textarea id="question" rows="1" maxlength="2000" placeholder="Ask MiTu something…" required></textarea>
+        <button type="submit" class="primary" id="send">Send</button>
+      </form>
+      <button id="newChat" class="link">New chat</button>
+    </section>
+
+    <!-- DOCUMENTS -->
+    <section id="docs" class="panel">
+      <label id="drop" class="drop">
+        <input type="file" id="pdf" accept="application/pdf" hidden>
+        <div class="drop-icon">📄</div>
+        <b>Drop a PDF here or click to choose</b>
+        <span>Notes, resumes, policies, books… (text PDFs, up to 20 MB)</span>
+      </label>
+      <div id="uploading" class="note" hidden>Reading and indexing your PDF…</div>
+      <h2>Your documents</h2>
+      <ul id="docList" class="doc-list"><li class="empty">No documents yet.</li></ul>
+    </section>
+
+    <!-- ART -->
+    <section id="art" class="panel">
+      <div class="art-grid">
+        <div class="card">
+          <label id="photoDrop" class="drop small">
+            <input type="file" id="photo" accept="image/jpeg,image/png,image/webp" hidden>
+            <div class="drop-icon">📷</div>
+            <b>Choose a photo</b>
+            <span>JPG, PNG or WebP, up to 10 MB</span>
+          </label>
+          <div class="styles" id="styles"></div>
+          <button id="makeArt" class="primary wide" disabled>✨ Create art</button>
+          <p id="artNote" class="note"></p>
+        </div>
+        <div class="compare">
+          <figure><img id="before" alt="Your photo"><figcaption>Before</figcaption></figure>
+          <figure>
+            <div id="artBusy" class="busy" hidden><div class="spinner"></div>Painting…</div>
+            <img id="after" alt="Art version"><figcaption>After</figcaption>
+          </figure>
+          <a id="download" class="secondary" download="mitu-art.png" hidden>⬇ Download</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>MiTu AI · Spring Boot + Gemini · RAG with page citations</footer>
+  <script src="app.js"></script>
+</body>
+</html>

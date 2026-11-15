@@ -1,0 +1,355 @@
+/* MiTu AI – web page logic: chat, documents and anime art. */
+const $ = (s) => document.querySelector(s);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+
+// ---------- tabs ----------
+document.querySelectorAll('.tab').forEach((t) =>
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === t));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === t.dataset.tab));
+    store.set('mitu-tab', t.dataset.tab);
+  })
+);
+const savedTab = store.get('mitu-tab');
+if (savedTab) document.querySelector(`.tab[data-tab="${savedTab}"]`)?.click();
+
+// ---------- status ----------
+let aiOn = false;
+async function loadStatus() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    aiOn = s.aiOn;
+    const pill = $('#status');
+    pill.textContent = s.aiOn ? `● AI on · ${s.chatModel}` : '● Offline mode (no API key)';
+    pill.className = 'pill ' + (s.aiOn ? 'on' : 'off');
+    renderStyles(s.styles);
+  } catch {
+    $('#status').textContent = 'Server not reachable';
+  }
+}
+
+// ---------- chat ----------
+let sessionId = store.get('mitu-session') || newId();
+store.set('mitu-session', sessionId);
+function newId() { return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random())); }
+
+const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function markdown(text) {
+  const lines = esc(text).split('\n');
+  let html = '', list = false;
+  for (const raw of lines) {
+    const line = raw.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    const item = line.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)/);
+    if (item) { if (!list) { html += '<ul>'; list = true; } html += `<li>${item[1]}</li>`; continue; }
+    if (list) { html += '</ul>'; list = false; }
+    if (line.trim()) html += `<p>${line}</p>`;
+  }
+  return html + (list ? '</ul>' : '');
+}
+
+function addMsg(who, html) {
+  const row = document.createElement('div');
+  row.className = `msg ${who}`;
+  row.innerHTML = `<div class="bubble">${html}</div>`;
+  $('#messages').appendChild(row);
+  $('#messages').scrollTop = $('#messages').scrollHeight;
+  return row;
+}
+
+async function ask(question) {
+  addMsg('user', esc(question));
+  const typing = addMsg('bot', '<span class="typing"><span></span><span></span><span></span></span>');
+  $('#send').disabled = true;
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, sessionId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Something went wrong');
+    let html = markdown(data.answer);
+    if (data.sources?.length) {
+      html += '<div class="sources">' + data.sources
+        .map((s) => `<span class="source" title="${esc(s.snippet)}">[${s.n}] ${esc(s.document)} · p.${s.page}</span>`)
+        .join('') + '</div>';
+    }
+    html += `<span class="mode">${data.mode === 'ai' ? 'Answered by AI from your documents' : 'Offline answer: best matching passages'}</span>`;
+    typing.querySelector('.bubble').innerHTML = html;
+  } catch (e) {
+    typing.querySelector('.bubble').textContent = '⚠ ' + e.message;
+  } finally {
+    $('#send').disabled = false;
+    $('#messages').scrollTop = $('#messages').scrollHeight;
+  }
+}
+
+$('#ask').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const q = $('#question').value.trim();
+  if (!q) return;
+  $('#question').value = '';
+  autoGrow();
+  ask(q);
+});
+$('#question').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#ask').requestSubmit(); }
+});
+function autoGrow() { const t = $('#question'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; }
+$('#question').addEventListener('input', autoGrow);
+$('#suggest').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') ask(e.target.textContent); });
+$('#newChat').addEventListener('click', async () => {
+  await fetch(`/api/chat/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => {});
+  sessionId = newId();
+  store.set('mitu-session', sessionId);
+  $('#messages').innerHTML = '';
+  addMsg('bot', 'New chat started. Ask me anything about your documents ✨');
+});
+
+// ---------- documents ----------
+async function loadDocs() {
+  const list = $('#docList');
+  try {
+    const docs = await (await fetch('/api/documents')).json();
+    if (!docs.length) { list.innerHTML = '<li class="empty">No documents yet.</li>'; return; }
+    list.innerHTML = '';
+    for (const d of docs) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>📄</span><span class="doc-name" title="${esc(d.name)}">${esc(d.name)}</span>
+        <span class="doc-meta">${d.pages} pages · ${d.chunks} chunks</span>
+        <span class="badge">${d.smartSearch ? 'AI search' : 'Keyword search'}</span>
+        <button class="icon-btn" title="Remove">✕</button>`;
+      li.querySelector('button').addEventListener('click', async () => {
+        if (!confirm(`Remove "${d.name}" from MiTu?`)) return;
+        await fetch(`/api/documents/${d.id}`, { method: 'DELETE' });
+        loadDocs();
+      });
+      list.appendChild(li);
+    }
+  } catch {
+    list.innerHTML = '<li class="empty">Could not load documents.</li>';
+  }
+}
+
+async function uploadPdf(file) {
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  $('#uploading').hidden = false;
+  $('#uploading').textContent = `Reading and indexing "${file.name}"…`;
+  try {
+    const res = await fetch('/api/documents', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    $('#uploading').textContent = `✅ "${data.name}" is ready: ${data.pages} pages, ${data.chunks} chunks. Ask about it in Chat.`;
+    loadDocs();
+  } catch (e) {
+    $('#uploading').textContent = '⚠ ' + (e.message || 'Upload failed');
+  }
+}
+$('#pdf').addEventListener('change', (e) => uploadPdf(e.target.files[0]));
+dropZone($('#drop'), uploadPdf);
+
+function dropZone(el, onFile) {
+  el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', (e) => { e.preventDefault(); el.classList.remove('over'); onFile(e.dataTransfer.files[0]); });
+}
+
+// ---------- anime art ----------
+let style = 'ANIME';
+let photoFile = null;
+
+function renderStyles(styles) {
+  const box = $('#styles');
+  box.innerHTML = '';
+  for (const s of styles) {
+    const b = document.createElement('button');
+    b.className = 'style' + (s.id === style ? ' active' : '');
+    b.textContent = s.label;
+    b.addEventListener('click', () => {
+      style = s.id;
+      box.querySelectorAll('.style').forEach((x) => x.classList.toggle('active', x === b));
+    });
+    box.appendChild(b);
+  }
+}
+
+function choosePhoto(file) {
+  if (!file) return;
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) { $('#artNote').textContent = 'Use a JPG, PNG or WebP photo.'; return; }
+  photoFile = file;
+  $('#before').src = URL.createObjectURL(file);
+  $('#after').removeAttribute('src');
+  $('#download').hidden = true;
+  $('#makeArt').disabled = false;
+  $('#artNote').textContent = '';
+}
+$('#photo').addEventListener('change', (e) => choosePhoto(e.target.files[0]));
+dropZone($('#photoDrop'), choosePhoto);
+
+$('#makeArt').addEventListener('click', async () => {
+  if (!photoFile) return;
+  $('#makeArt').disabled = true;
+  $('#artBusy').hidden = false;
+  $('#artNote').textContent = '';
+  try {
+    let blob = null;
+    if (aiOn) {
+      const form = new FormData();
+      form.append('photo', photoFile);
+      form.append('style', style);
+      const res = await fetch('/api/art', { method: 'POST', body: form });
+      if (res.ok) {
+        blob = await res.blob();
+        $('#artNote').textContent = '✨ Painted by the AI image model.';
+      } else {
+        const err = await res.json().catch(() => ({}));
+        $('#artNote').textContent = `${err.message || 'AI art failed.'} Used MiTu's offline filter instead.`;
+      }
+    }
+    if (!blob) {
+      blob = await offlineArt(photoFile, style);
+      if (!aiOn) $('#artNote').textContent = "Made with MiTu's offline filter. Add a Gemini key for full AI art.";
+    }
+    const url = URL.createObjectURL(blob);
+    $('#after').src = url;
+    $('#download').href = url;
+    $('#download').hidden = false;
+  } catch (e) {
+    $('#artNote').textContent = '⚠ ' + e.message;
+  } finally {
+    $('#artBusy').hidden = true;
+    $('#makeArt').disabled = false;
+  }
+});
+
+/* Offline art: image processing in the browser, so the feature works with no AI key.
+   Smooths the photo, reduces it to flat colour bands, warms and brightens it, then
+   draws ink outlines found with a Sobel edge detector. */
+async function offlineArt(file, styleId) {
+  const img = await createImageBitmap(file);
+  const max = 1024;
+  const scale = Math.min(1, max / Math.max(img.width, img.height));
+  const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  if (styleId === 'PIXEL') {
+    const small = document.createElement('canvas');
+    const pw = 96, ph = Math.max(1, Math.round(96 * h / w));
+    small.width = pw; small.height = ph;
+    small.getContext('2d').drawImage(img, 0, 0, pw, ph);
+    const sctx = small.getContext('2d');
+    const d = sctx.getImageData(0, 0, pw, ph);
+    posterize(d.data, 5); saturate(d.data, 1.3, 1.05);
+    sctx.putImageData(d, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(small, 0, 0, w, h);
+    return toBlob(canvas);
+  }
+
+  ctx.drawImage(img, 0, 0, w, h);
+  const src = ctx.getImageData(0, 0, w, h);
+  const gray = toGray(src.data, w, h);
+  const out = new ImageData(new Uint8ClampedArray(src.data), w, h);
+  const p = {
+    ANIME: { blur: 5, radius: 3, levels: 8, sat: 1.3, light: 1.1, edge: 14, ink: 0.8, warm: 8 },
+    WATERCOLOR: { blur: 6, radius: 3, levels: 10, sat: 1.15, light: 1.12, edge: 0, ink: 0, warm: 6 },
+    COMIC: { blur: 4, radius: 2, levels: 4, sat: 1.6, light: 1.0, edge: 10, ink: 1, warm: 0 },
+  }[styleId] || { blur: 5, radius: 3, levels: 8, sat: 1.3, light: 1.1, edge: 14, ink: 0.8, warm: 8 };
+
+  if (styleId === 'SKETCH') {
+    const soft = new ImageData(new Uint8ClampedArray(src.data), w, h);
+    boxBlur(soft.data, w, h, 1);
+    const edges = sobel(toGray(soft.data, w, h), w, h);
+    for (let i = 0; i < w * h; i++) {
+      const v = 255 - Math.min(255, edges[i] * 6);
+      const shade = 0.75 * v + 0.25 * (gray[i] > 140 ? 255 : gray[i] + 60);
+      const n = (Math.random() - 0.5) * 14;
+      out.data[i * 4] = out.data[i * 4 + 1] = out.data[i * 4 + 2] = shade + n;
+    }
+  } else {
+    // Smooth first (flat painted areas), then find outlines on the smooth picture so noise
+    // and skin texture don't turn into lines.
+    for (let k = 0; k < p.blur; k++) boxBlur(out.data, w, h, p.radius);
+    const smoothEdges = sobel(toGray(out.data, w, h), w, h);
+    posterize(out.data, p.levels);
+    saturate(out.data, p.sat, p.light, p.warm);
+    if (p.edge) {
+      const edges = smoothEdges;
+      for (let i = 0; i < w * h; i++) {
+        if (edges[i] > p.edge) {
+          const a = p.ink * Math.min(1, (edges[i] - p.edge) / 20 + 0.35);
+          for (let c = 0; c < 3; c++) out.data[i * 4 + c] = out.data[i * 4 + c] * (1 - a) + 30 * a;
+        }
+      }
+    }
+    if (styleId === 'WATERCOLOR') {
+      for (let i = 0; i < out.data.length; i += 4) {
+        const n = (Math.random() - 0.5) * 18;
+        out.data[i] += n; out.data[i + 1] += n; out.data[i + 2] += n;
+      }
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+  return toBlob(canvas);
+}
+
+function toBlob(canvas) { return new Promise((r) => canvas.toBlob(r, 'image/png')); }
+function toGray(d, w, h) {
+  const g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  return g;
+}
+function sobel(g, w, h) {
+  const e = new Float32Array(w * h);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const gx = -g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1] + g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1];
+      const gy = -g[i - w - 1] - 2 * g[i - w] - g[i - w + 1] + g[i + w - 1] + 2 * g[i + w] + g[i + w + 1];
+      e[i] = Math.sqrt(gx * gx + gy * gy) / 4;
+    }
+  }
+  return e;
+}
+function boxBlur(d, w, h, r) {
+  const tmp = new Uint8ClampedArray(d.length);
+  for (let pass = 0; pass < 2; pass++) {
+    const from = pass === 0 ? d : tmp, to = pass === 0 ? tmp : d;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let rs = 0, gs = 0, bs = 0, n = 0;
+        for (let k = -r; k <= r; k++) {
+          const xx = pass === 0 ? Math.min(w - 1, Math.max(0, x + k)) : x;
+          const yy = pass === 0 ? y : Math.min(h - 1, Math.max(0, y + k));
+          const j = (yy * w + xx) * 4;
+          rs += from[j]; gs += from[j + 1]; bs += from[j + 2]; n++;
+        }
+        const i = (y * w + x) * 4;
+        to[i] = rs / n; to[i + 1] = gs / n; to[i + 2] = bs / n; to[i + 3] = from[i + 3];
+      }
+    }
+  }
+}
+function posterize(d, levels) {
+  if (!levels) return;
+  const step = 255 / (levels - 1);
+  for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) d[i + c] = Math.round(d[i + c] / step) * step;
+}
+function saturate(d, sat, light, warm = 0) {
+  for (let i = 0; i < d.length; i += 4) {
+    const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+    d[i] = (avg + (d[i] - avg) * sat) * light + warm;
+    d[i + 1] = (avg + (d[i + 1] - avg) * sat) * light + warm * 0.4;
+    d[i + 2] = (avg + (d[i + 2] - avg) * sat) * light - warm * 0.3;
+  }
+}
+
+loadStatus();
+loadDocs();
