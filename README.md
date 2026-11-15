@@ -151,7 +151,7 @@ Errors always come back as `{"message": "..."}` with a fitting status code (`400
 ./mvnw test
 ```
 
-12 tests cover chunking, cosine similarity, vector ranking, citation filtering, a real PDF going through upload → search → cited answer → restart → delete, input validation, the offline art signal and the rate limiter's refill. GitHub Actions runs them, plus a Docker build, on every push.
+13 tests cover chunking, cosine similarity, vector ranking, citation parsing, the AI being told the date, a real PDF going through upload → search → cited answer → restart → delete, input validation, the offline art signal and the rate limiter's refill. GitHub Actions runs them, plus a Docker build, on every push.
 
 ## Project structure
 
