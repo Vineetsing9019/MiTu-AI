@@ -43,6 +43,26 @@ public class FreeImageClient {
 
     /** Generates a picture and returns its bytes. */
     public GeminiClient.Image generate(String prompt, int width, int height) {
+        // The free service sometimes turns requests away when busy: try up to 3 times.
+        AiException last = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                return generateOnce(prompt, width, height);
+            } catch (AiException e) {
+                last = e;
+                log.info("Pollinations attempt {} failed: {}", attempt, e.getMessage());
+                try {
+                    Thread.sleep(2500L * attempt);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        throw last;
+    }
+
+    private GeminiClient.Image generateOnce(String prompt, int width, int height) {
         try {
             ResponseEntity<byte[]> res = http.get().uri(URI.create(url(prompt, width, height))).retrieve().toEntity(byte[].class);
             byte[] body = res.getBody();

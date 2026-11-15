@@ -222,6 +222,14 @@ function dropZone(el, onFile) {
 
 // ---------- anime art ----------
 let style = 'ANIME';
+let artMode = 'ai'; // 'ai' = AI repaint on the server, 'face' = the real photo through the in-browser filter
+document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => {
+  artMode = b.dataset.mode;
+  document.querySelectorAll('.mode-btn').forEach((x) => {
+    x.classList.toggle('active', x === b);
+    x.setAttribute('aria-checked', String(x === b));
+  });
+}));
 let photoFile = null;
 
 function renderStyles(styles) {
@@ -239,16 +247,66 @@ function renderStyles(styles) {
   }
 }
 
-function choosePhoto(file) {
+/* Every photo (gallery, drop or camera) is redrawn as a JPEG of at most 1600 px, so big phone
+   photos upload fast and any format the browser can show is accepted. */
+async function choosePhoto(file) {
   if (!file) return;
-  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) { $('#artNote').textContent = 'Use a JPG, PNG or WebP photo.'; return; }
-  photoFile = file;
-  $('#before').src = URL.createObjectURL(file);
+  $('#artNote').textContent = '';
+  let jpeg;
+  try {
+    const img = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * scale);
+    c.height = Math.round(img.height * scale);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
+    jpeg = new File([blob], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    $('#artNote').textContent = "This browser can't open that picture. Try a JPG or PNG photo.";
+    return;
+  }
+  photoFile = jpeg;
+  $('#before').src = URL.createObjectURL(jpeg);
   $('#after').removeAttribute('src');
   $('#download').hidden = true;
   $('#makeArt').disabled = false;
-  $('#artNote').textContent = '';
 }
+
+// ---------- camera ----------
+let camStream = null;
+function closeCamera() {
+  camStream?.getTracks().forEach((t) => t.stop());
+  camStream = null;
+  $('#cam').hidden = true;
+}
+$('#useCamera').addEventListener('click', async () => {
+  // Phones: the camera app via the file input. Laptops: a live webcam preview.
+  const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (phone || !navigator.mediaDevices?.getUserMedia) { $('#cameraInput').click(); return; }
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 } }, audio: false });
+    $('#camVideo').srcObject = camStream;
+    $('#cam').hidden = false;
+  } catch {
+    $('#artNote').textContent = 'Camera blocked or not found. Allow camera access in the browser (🔒 next to the address), or choose a photo instead.';
+  }
+});
+$('#camCancel').addEventListener('click', closeCamera);
+$('#cam').addEventListener('click', (e) => { if (e.target.id === 'cam') closeCamera(); });
+$('#camSnap').addEventListener('click', () => {
+  const v = $('#camVideo');
+  if (v.videoWidth < 16) { $('#artNote').textContent = 'The camera is still starting. Try again in a second.'; return; }
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth;
+  c.height = v.videoHeight;
+  const ctx = c.getContext('2d');
+  ctx.translate(c.width, 0); // save it the way the user saw it (mirrored, like a selfie)
+  ctx.scale(-1, 1);
+  ctx.drawImage(v, 0, 0);
+  c.toBlob((blob) => { closeCamera(); choosePhoto(new File([blob], 'camera.jpg', { type: 'image/jpeg' })); }, 'image/jpeg', 0.92);
+});
+$('#cameraInput').addEventListener('change', (e) => { choosePhoto(e.target.files[0]); e.target.value = ''; });
 $('#photo').addEventListener('change', (e) => { choosePhoto(e.target.files[0]); e.target.value = ''; });
 dropZone($('#photoDrop'), choosePhoto);
 
@@ -259,7 +317,7 @@ $('#makeArt').addEventListener('click', async () => {
   $('#artNote').textContent = '';
   try {
     let blob = null;
-    if (aiOn) {
+    if (aiOn && artMode === 'ai') {
       const form = new FormData();
       form.append('photo', photoFile);
       form.append('style', style);
@@ -276,7 +334,8 @@ $('#makeArt').addEventListener('click', async () => {
     }
     if (!blob) {
       blob = await offlineArt(photoFile, style);
-      if (!aiOn) $('#artNote').textContent = "Made with MiTu's offline filter. Add a Gemini key for full AI art.";
+      if (artMode === 'face') $('#artNote').textContent = '🙂 Your real photo, styled in the browser: your face stays exactly the same.';
+      else if (!aiOn) $('#artNote').textContent = "Made with MiTu's offline filter. Add a Gemini key for full AI art.";
     }
     const url = URL.createObjectURL(blob);
     $('#after').src = url;

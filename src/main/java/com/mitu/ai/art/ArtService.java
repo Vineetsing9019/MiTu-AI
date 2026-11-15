@@ -93,12 +93,15 @@ public class ArtService {
     }
 
     static final String DESCRIBE = """
-            Describe this photo for an artist who will repaint it, in one paragraph of at most 70 words:
-            the people (approximate age, gender, hair, clothing, expression, pose), the setting and
-            background, the main colours and the lighting. Plain description only: no names, no opinions.""";
+            Describe this photo for a portrait artist who must repaint it so the person is clearly
+            recognisable, in one paragraph of at most 120 words. For each person: approximate age,
+            gender, skin tone, face shape, eye shape, eyebrows, nose, hairstyle and hair colour, facial
+            hair, glasses or jewellery, expression, head angle and pose, and exact clothing with colours.
+            Then the camera framing (close-up, half body...), the background and the lighting.
+            Plain visual description only: no names, no opinions.""";
 
     static String freePrompt(Style style, String scene) {
-        return style.look + ". Scene: " + scene + " No text, no watermark.";
+        return style.look + ". Keep the exact same framing and pose. " + scene + " No text, no watermark.";
     }
 
     static String instruction(Style style) {

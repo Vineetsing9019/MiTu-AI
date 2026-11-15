@@ -69,11 +69,17 @@
       <div class="art-grid">
         <div class="card">
           <label id="photoDrop" class="drop small">
-            <input type="file" id="photo" accept="image/jpeg,image/png,image/webp" hidden>
-            <div class="drop-icon">📷</div>
+            <input type="file" id="photo" accept="image/*" hidden>
+            <div class="drop-icon">🖼️</div>
             <b>Choose a photo</b>
-            <span>JPG, PNG or WebP, up to 10 MB</span>
+            <span>or drop one here</span>
           </label>
+          <button type="button" id="useCamera" class="secondary wide">📸 Use camera</button>
+          <input type="file" id="cameraInput" accept="image/*" capture="user" hidden>
+          <div class="artmode" role="radiogroup" aria-label="How to make the art">
+            <button type="button" class="mode-btn active" data-mode="ai" role="radio" aria-checked="true">✨ AI repaint<small>new AI picture of the scene</small></button>
+            <button type="button" class="mode-btn" data-mode="face" role="radio" aria-checked="false">🙂 Keep my face<small>your real photo, cartoon-styled</small></button>
+          </div>
           <div class="styles" id="styles"></div>
           <button id="makeArt" class="primary wide" disabled>✨ Create art</button>
           <p id="artNote" class="note"></p>
@@ -89,6 +95,16 @@
       </div>
     </section>
   </main>
+
+  <div id="cam" class="cam" hidden role="dialog" aria-label="Camera">
+    <div class="cam-box">
+      <video id="camVideo" autoplay playsinline muted></video>
+      <div class="cam-actions">
+        <button type="button" id="camCancel" class="secondary">Cancel</button>
+        <button type="button" id="camSnap" class="primary">📸 Take photo</button>
+      </div>
+    </div>
+  </div>
 
   <footer>MiTu AI · Spring Boot + Gemini · RAG with page citations</footer>
   <script src="app.js"></script>

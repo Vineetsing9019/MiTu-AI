@@ -98,6 +98,16 @@ h2 { font-size: 16px; margin: 24px 0 10px; }
 .art-grid { display: grid; grid-template-columns: 300px 1fr; gap: 18px; align-items: start; }
 @media (max-width: 760px) { .art-grid { grid-template-columns: 1fr; } .bubble { max-width: 92%; } }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+#useCamera { margin-top: 10px; }
+.cam { position: fixed; inset: 0; background: rgba(0, 0, 0, .75); display: grid; place-items: center; z-index: 10; padding: 16px; }
+.cam[hidden] { display: none; }
+.cam-box { background: var(--card); border-radius: var(--radius); padding: 12px; width: min(560px, 100%); }
+.cam-box video { width: 100%; border-radius: 12px; background: #000; transform: scaleX(-1); display: block; }
+.cam-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+.artmode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.mode-btn { border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 8px; cursor: pointer; font-size: 13px; font-weight: 600; text-align: center; }
+.mode-btn small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.mode-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .styles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
 .style { border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 8px; cursor: pointer; font-size: 13px; }
 .style.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -114,3 +124,9 @@ h2 { font-size: 16px; margin: 24px 0 10px; }
 
 footer { text-align: center; color: var(--muted); font-size: 12px; padding: 18px; }
 .bubble p.h { margin-top: 10px; }
+
+/* hidden must win over display:flex, or the spinner shows all the time */
+.busy[hidden], .gen-busy[hidden] { display: none; }
+
+/* Anything marked hidden stays hidden, whatever its other styles say. */
+[hidden] { display: none !important; }
