@@ -43,6 +43,21 @@ public class DocumentService {
         return store;
     }
 
+    /** Reads a Word (.docx) file. Word files have no fixed pages, so the whole text is one page. */
+    public DocumentInfo addWord(String fileName, byte[] bytes) throws IOException {
+        StringBuilder text = new StringBuilder();
+        try (org.apache.poi.xwpf.usermodel.XWPFDocument doc =
+                     new org.apache.poi.xwpf.usermodel.XWPFDocument(new java.io.ByteArrayInputStream(bytes))) {
+            for (org.apache.poi.xwpf.usermodel.XWPFParagraph p : doc.getParagraphs()) {
+                text.append(p.getText()).append('\n');
+            }
+        }
+        if (text.toString().isBlank()) {
+            throw new IllegalArgumentException("This Word file has no text to read.");
+        }
+        return addPages(fileName, List.of(text.toString()));
+    }
+
     /** Reads a PDF's text page by page and adds it. */
     public DocumentInfo addPdf(String fileName, byte[] bytes) throws IOException {
         List<String> pages = new ArrayList<>();

@@ -5,6 +5,18 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
 };
 
+// ---------- theme (light / dark / device) ----------
+const themeBtn = $('#theme');
+const savedTheme = store.get('mitu-theme');
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+themeBtn?.addEventListener('click', () => {
+  const now = document.documentElement.dataset.theme;
+  const dark = now === 'dark' || (!now && matchMedia('(prefers-color-scheme: dark)').matches);
+  const next = dark ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  store.set('mitu-theme', next);
+});
+
 // ---------- tabs ----------
 document.querySelectorAll('.tab').forEach((t) =>
   t.addEventListener('click', () => {
@@ -78,18 +90,57 @@ function markdown(text) {
   return html + (list ? '</ul>' : '');
 }
 
-function addMsg(who, html) {
+function addMsg(who, html, save = true) {
   const row = document.createElement('div');
   row.className = `msg ${who}`;
   row.innerHTML = `<div class="bubble">${html}</div>`;
   $('#messages').appendChild(row);
   $('#messages').scrollTop = $('#messages').scrollHeight;
+  if (save && !html.includes('class="typing"')) saveMsg(who, html);
   return row;
+}
+
+/* The conversation is kept in this browser (localStorage), so a refresh doesn't lose it.
+   Only finished messages are saved; the last 60 are kept. */
+const CHAT_KEY = 'mitu-chat';
+function savedChat() {
+  try { return JSON.parse(store.get(CHAT_KEY) || '[]'); } catch { return []; }
+}
+function saveMsg(who, html) {
+  const list = savedChat();
+  list.push({ who, html });
+  store.set(CHAT_KEY, JSON.stringify(list.slice(-60)));
+}
+function restoreChat() {
+  const list = savedChat();
+  if (!list.length) return false;
+  $('#messages').innerHTML = '';
+  for (const m of list) addMsg(m.who, m.html, false);
+  return true;
+}
+
+/* Shows the answer's text appearing word by word, then swaps in the formatted version.
+   It only takes about a second, so it feels live without a streaming server. */
+function reveal(bubble, text) {
+  return new Promise((resolve) => {
+    const plain = document.createElement('p');
+    bubble.innerHTML = '';
+    bubble.appendChild(plain);
+    const words = text.split(/(\s+)/);
+    const step = Math.max(1, Math.ceil(words.length / 60));
+    let i = 0;
+    const timer = setInterval(() => {
+      i += step;
+      plain.textContent = words.slice(0, i).join('');
+      $('#messages').scrollTop = $('#messages').scrollHeight;
+      if (i >= words.length) { clearInterval(timer); resolve(); }
+    }, 18);
+  });
 }
 
 async function ask(question) {
   addMsg('user', esc(question));
-  const typing = addMsg('bot', '<span class="typing"><span></span><span></span><span></span></span>');
+  const typing = addMsg('bot', '<span class="typing"><span></span><span></span><span></span></span>', false);
   $('#send').disabled = true;
   try {
     const data = await api('/api/chat', {
@@ -97,6 +148,8 @@ async function ask(question) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, sessionId }),
     });
+    const bubble = typing.querySelector('.bubble');
+    if (data.answer.length < 4000) await reveal(bubble, data.answer);
     let html = markdown(data.answer);
     if (data.sources?.length) {
       html += '<div class="sources">' + data.sources
@@ -121,8 +174,8 @@ async function ask(question) {
       offline: 'Offline answer: best matching passages',
     };
     html += `<span class="mode">${label[data.mode] || ''}</span>`;
-    const bubble = typing.querySelector('.bubble');
     bubble.innerHTML = html;
+    saveMsg('bot', html);
     const img = bubble.querySelector('.gen img');
     if (img) {
       const busy = bubble.querySelector('.gen-busy');
@@ -150,12 +203,40 @@ $('#question').addEventListener('keydown', (e) => {
 });
 function autoGrow() { const t = $('#question'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; }
 $('#question').addEventListener('input', autoGrow);
+
+const mic = $('#mic');
+const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (mic && Speech) {
+  const rec = new Speech();
+  rec.lang = 'en-IN';
+  rec.interimResults = true;
+  rec.continuous = false;
+  let base = '';
+  rec.onresult = (e) => {
+    let text = '';
+    for (const r of e.results) text += r[0].transcript;
+    $('#question').value = (base + ' ' + text).trim();
+    autoGrow();
+  };
+  rec.onend = () => { mic.classList.remove('listening'); mic.setAttribute('aria-pressed', 'false'); };
+  rec.onerror = () => { mic.classList.remove('listening'); };
+  mic.addEventListener('click', () => {
+    if (mic.classList.contains('listening')) { rec.stop(); return; }
+    base = $('#question').value;
+    mic.classList.add('listening');
+    mic.setAttribute('aria-pressed', 'true');
+    rec.start();
+  });
+} else if (mic) {
+  mic.hidden = true;
+}
 $('#suggest').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') ask(e.target.textContent); });
 $('#newChat').addEventListener('click', async () => {
   await fetch(`/api/chat/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => {});
   sessionId = newId();
   store.set('mitu-session', sessionId);
   $('#messages').innerHTML = '';
+  store.set(CHAT_KEY, '[]');
   addMsg('bot', 'New chat started. Ask me anything about your documents ✨');
 });
 
@@ -473,5 +554,6 @@ function saturate(d, sat, light, warm = 0) {
   }
 }
 
+restoreChat();
 loadStatus();
 loadDocs();

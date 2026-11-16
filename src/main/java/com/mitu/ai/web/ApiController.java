@@ -76,11 +76,12 @@ public class ApiController {
 
     @PostMapping(value = "/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public DocumentInfo upload(@RequestParam("file") MultipartFile file) throws IOException {
-        String name = file.getOriginalFilename() == null ? "document.pdf" : file.getOriginalFilename();
-        if (file.isEmpty() || !name.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
-            throw new IllegalArgumentException("Please upload a PDF file.");
-        }
-        return documents.addPdf(name, file.getBytes());
+        String name = file.getOriginalFilename() == null ? "document" : file.getOriginalFilename();
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (file.isEmpty()) throw new IllegalArgumentException("That file is empty.");
+        if (lower.endsWith(".pdf")) return documents.addPdf(name, file.getBytes());
+        if (lower.endsWith(".docx")) return documents.addWord(name, file.getBytes());
+        throw new IllegalArgumentException("Please upload a PDF or Word (.docx) file.");
     }
 
     @DeleteMapping("/documents/{id}")

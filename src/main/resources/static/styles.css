@@ -16,7 +16,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #12111a; --card: #1c1a28; --ink: #ecebf5; --muted: #9b99b0; --line: #2d2a3d;
     --accent: #8b7dff; --accent-soft: #29254a; --bot: #1c1a28; --user: #6d5dfc;
     color-scheme: dark;
@@ -130,3 +130,20 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 18px
 
 /* Anything marked hidden stays hidden, whatever its other styles say. */
 [hidden] { display: none !important; }
+
+/* Manual theme choice (the 🌓 button) overrides the device setting. */
+:root[data-theme="dark"] {
+  --bg: #12111a; --card: #1c1a28; --ink: #ecebf5; --muted: #9b99b0; --line: #2d2a3d;
+  --accent: #8b7dff; --accent-soft: #29254a; --bot: #1c1a28; --user: #6d5dfc;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f6f5fb; --card: #ffffff; --ink: #1d1b2c; --muted: #6c6a80; --line: #e4e2ef;
+  --accent: #6d5dfc; --accent-soft: #eeebff; --bot: #ffffff; --user: #6d5dfc;
+  color-scheme: light;
+}
+.top-right { display: flex; align-items: center; gap: 8px; }
+.theme { border: 1px solid var(--line); background: var(--card); border-radius: 999px; width: 36px; height: 36px; cursor: pointer; font-size: 16px; }
+.mic { border: 1px solid var(--line); background: var(--card); border-radius: 12px; width: 40px; cursor: pointer; font-size: 18px; }
+.mic.listening { background: var(--accent-soft); border-color: var(--accent); animation: pulse 1s infinite; }
+@keyframes pulse { 50% { transform: scale(1.08); } }

@@ -75,6 +75,7 @@ public class ChatService {
               helpfully. Don't mention "context", "passages" or "documents" then.
             - Don't introduce yourself unless asked who you are.
             - Keep answers short and clear: a direct answer first, then bullet points if useful.
+            - Reply in the same language the user writes in: English, Hindi or Marathi.
             - Never invent page numbers, names, links or figures.""";
 
     /** Below this similarity a passage is not really about the question, so it isn't used. */

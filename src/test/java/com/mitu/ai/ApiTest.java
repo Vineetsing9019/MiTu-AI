@@ -42,7 +42,7 @@ class ApiTest {
     void nonPdfUploadIsRefused() throws Exception {
         mvc.perform(multipart("/api/documents").file(new MockMultipartFile("file", "notes.txt", "text/plain", "hi".getBytes())))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Please upload a PDF file."));
+                .andExpect(jsonPath("$.message").value("Please upload a PDF or Word (.docx) file."));
     }
 
     @Test
