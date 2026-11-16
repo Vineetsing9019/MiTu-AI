@@ -147,3 +147,8 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 18px
 .mic { border: 1px solid var(--line); background: var(--card); border-radius: 12px; width: 40px; cursor: pointer; font-size: 18px; }
 .mic.listening { background: var(--accent-soft); border-color: var(--accent); animation: pulse 1s infinite; }
 @keyframes pulse { 50% { transform: scale(1.08); } }
+.emoji-wrap { position: relative; }
+.emoji-panel { position: absolute; bottom: 48px; left: 0; z-index: 5; width: 260px; display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .15); }
+.emoji-panel[hidden] { display: none; }
+.emoji-panel button { border: 0; background: none; font-size: 20px; padding: 4px; border-radius: 8px; cursor: pointer; }
+.emoji-panel button:hover { background: var(--accent-soft); }

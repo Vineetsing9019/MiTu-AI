@@ -50,6 +50,10 @@
         <label class="attach" title="Attach a PDF" aria-label="Attach a PDF">
           <input type="file" id="chatPdf" accept="application/pdf,.pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>📎
         </label>
+        <div class="emoji-wrap">
+          <button type="button" id="emojiBtn" class="mic" aria-label="Add an emoji" aria-expanded="false" title="Add an emoji">🙂</button>
+          <div id="emojiPanel" class="emoji-panel" hidden role="dialog" aria-label="Emoji picker"></div>
+        </div>
         <button type="button" id="mic" class="mic" aria-label="Speak your question" aria-pressed="false" title="Speak your question">🎤</button>
         <textarea id="question" rows="1" maxlength="2000" placeholder="Ask MiTu something…" required></textarea>
         <button type="submit" class="primary" id="send">Send</button>

@@ -212,6 +212,29 @@ $('#question').addEventListener('keydown', (e) => {
 function autoGrow() { const t = $('#question'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; }
 $('#question').addEventListener('input', autoGrow);
 
+// ---------- emoji picker ----------
+const EMOJI = ['😊', '😀', '😂', '🥰', '😎', '🤔', '👍', '👏', '🙏', '🎉', '🔥', '✨', '💡', '📚', '💼', '🎓', '📄', '🖼️', '🎨', '🚀', '✅', '❤️', '😅', '🤝', '💪', '🌟', '☕', '🙌', '😮', '😢', '👀', '🧠', '🇮🇳'];
+const emojiBtn = $('#emojiBtn');
+const emojiPanel = $('#emojiPanel');
+if (emojiBtn && emojiPanel) {
+  emojiPanel.innerHTML = EMOJI.map((e) => `<button type="button" aria-label="${e}">${e}</button>`).join('');
+  const setOpen = (open) => { emojiPanel.hidden = !open; emojiBtn.setAttribute('aria-expanded', String(open)); };
+  emojiBtn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(emojiPanel.hidden); });
+  emojiPanel.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const box = $('#question');
+    const start = box.selectionStart ?? box.value.length;
+    const end = box.selectionEnd ?? start;
+    box.value = box.value.slice(0, start) + b.textContent + box.value.slice(end);
+    const pos = start + b.textContent.length;
+    box.setSelectionRange(pos, pos);
+    box.focus();
+    autoGrow();
+  });
+  document.addEventListener('click', (e) => { if (!emojiPanel.contains(e.target) && e.target !== emojiBtn) setOpen(false); });
+}
+
 const mic = $('#mic');
 const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (mic && Speech) {
