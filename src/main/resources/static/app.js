@@ -47,12 +47,20 @@ async function loadStatus() {
 /* Calls the server and returns its JSON. Turns every kind of failure into a sentence a person
    understands: Render's free plan sleeps and restarts, and then answers with an HTML page
    (502/503) instead of JSON. */
+const OFFLINE_TEXT = "You're offline. Connect to the internet, then send your message again.";
+const UNREACHABLE_TEXT = "Can't reach MiTu right now. Check your internet, or wait a moment: the server may be waking up.";
+
+/* Turns any network failure into a sentence the user understands. */
+function networkError(e) {
+  return new Error(navigator.onLine === false ? OFFLINE_TEXT : UNREACHABLE_TEXT);
+}
+
 async function api(url, options = {}) {
   let res;
   try {
     res = await fetch(url, options);
-  } catch {
-    throw new Error('Can\'t reach MiTu. Check your internet, or wait a moment: the server may be waking up.');
+  } catch (e) {
+    throw networkError(e);
   }
   const text = await res.text();
   let data = null;
@@ -402,7 +410,12 @@ $('#makeArt').addEventListener('click', async () => {
       const form = new FormData();
       form.append('photo', photoFile);
       form.append('style', style);
-      const res = await fetch('/api/art', { method: 'POST', body: form });
+      let res;
+      try {
+        res = await fetch('/api/art', { method: 'POST', body: form });
+      } catch (e) {
+        throw networkError(e);
+      }
       if (res.ok) {
         blob = await res.blob();
         $('#artNote').textContent = res.headers.get('X-Mitu-Engine') === 'free'
