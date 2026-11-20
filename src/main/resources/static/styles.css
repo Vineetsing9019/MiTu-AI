@@ -81,6 +81,23 @@ h2 { font-size: 16px; margin: 24px 0 10px; }
 .link { border: 0; background: none; color: var(--muted); cursor: pointer; margin-top: 8px; font-size: 13px; text-decoration: underline; }
 .wide { width: 100%; margin-top: 14px; }
 
+/* chat history */
+.chat-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+.history { margin-top: 8px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 14px 12px; }
+.history h2 { margin: 12px 0 8px; }
+.history-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+.history-list li { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); }
+.history-list li:first-child { border-top: 0; }
+.history-list li.empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+.history-list li.current .open-chat b { color: var(--accent); }
+.open-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 0; background: none; color: var(--ink); padding: 10px 4px; cursor: pointer; border-radius: 10px; }
+.open-chat:hover { background: var(--accent-soft); }
+.open-chat b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.open-chat small { color: var(--muted); font-size: 12px; }
+.del-chat { flex: none; width: 44px; height: 44px; border: 0; background: none; color: var(--muted); border-radius: 50%; cursor: pointer; font-size: 14px; }
+.del-chat:hover { background: var(--accent-soft); color: var(--ink); }
+.history-note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+
 .drop { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 34px 20px; border: 2px dashed var(--line); border-radius: var(--radius); background: var(--card); cursor: pointer; transition: border-color .15s; }
 .drop:hover, .drop.over { border-color: var(--accent); }
 .drop span { color: var(--muted); font-size: 13px; }

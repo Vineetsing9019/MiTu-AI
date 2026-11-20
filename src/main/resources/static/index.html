@@ -58,7 +58,15 @@
         <textarea id="question" rows="1" maxlength="2000" placeholder="Ask MiTu something…" required></textarea>
         <button type="submit" class="primary" id="send">Send</button>
       </form>
-      <button id="newChat" class="link">New chat</button>
+      <div class="chat-actions">
+        <button id="newChat" class="link" type="button">New chat</button>
+        <button id="historyBtn" class="link" type="button" aria-expanded="false" aria-controls="history">🕘 Chat history</button>
+      </div>
+      <div id="history" class="history" hidden>
+        <h2>Your chats</h2>
+        <ul id="historyList" class="history-list"></ul>
+        <p class="history-note">Saved in this browser only. Tap a chat to open it and carry on where you left off.</p>
+      </div>
     </section>
 
     <!-- DOCUMENTS -->

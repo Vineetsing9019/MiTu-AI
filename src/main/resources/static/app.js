@@ -3,6 +3,7 @@ const $ = (s) => document.querySelector(s);
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+  remove(k) { try { localStorage.removeItem(k); } catch { /* private mode */ } },
 };
 
 // ---------- theme (light / dark / device) ----------
@@ -108,24 +109,123 @@ function addMsg(who, html, save = true) {
   return row;
 }
 
-/* The conversation is kept in this browser (localStorage), so a refresh doesn't lose it.
-   Only finished messages are saved; the last 60 are kept. */
-const CHAT_KEY = 'mitu-chat';
-function savedChat() {
-  try { return JSON.parse(store.get(CHAT_KEY) || '[]'); } catch { return []; }
+/* ---------- chat history ----------
+   Every conversation is kept in this browser (localStorage), newest first, so a refresh
+   doesn't lose it and an old chat can be opened again from "Chat history".
+   Only finished messages are saved: the newest 20 chats, each with its last 60 messages.
+   Each chat keeps its own sessionId, so the server still remembers it for follow-ups. */
+const CHATS_KEY = 'mitu-chats';
+const MAX_CHATS = 20;
+const MAX_MSGS = 60;
+const welcomeHtml = $('#messages').innerHTML;
+
+function loadChats() {
+  try { return JSON.parse(store.get(CHATS_KEY) || '[]'); } catch { return []; }
 }
+function saveChats(list) {
+  store.set(CHATS_KEY, JSON.stringify(list.slice(0, MAX_CHATS)));
+}
+const hasQuestion = (chat) => chat.msgs.some((m) => m.who === 'user');
+
+// Message HTML to plain text, without loading any images it contains.
+function plainText(html) {
+  return new DOMParser().parseFromString(html, 'text/html').body.textContent.trim();
+}
+// A chat is named after its first question.
+function titleFrom(msgs) {
+  const first = msgs.find((m) => m.who === 'user');
+  const t = first ? plainText(first.html) : 'New chat';
+  return t.length > 60 ? t.slice(0, 57) + '…' : t;
+}
+
 function saveMsg(who, html) {
-  const list = savedChat();
-  list.push({ who, html });
-  store.set(CHAT_KEY, JSON.stringify(list.slice(-60)));
+  const list = loadChats();
+  let chat = list.find((c) => c.id === sessionId);
+  if (chat) list.splice(list.indexOf(chat), 1);
+  else chat = { id: sessionId, msgs: [] };
+  chat.msgs = [...chat.msgs, { who, html }].slice(-MAX_MSGS);
+  chat.title = titleFrom(chat.msgs);
+  chat.updated = Date.now();
+  saveChats([chat, ...list]); // the chat just used moves to the top
+  renderHistory();
 }
-function restoreChat() {
-  const list = savedChat();
-  if (!list.length) return false;
+
+// The older version kept a single chat under 'mitu-chat': move it into the list once.
+(function moveOldChat() {
+  const old = store.get('mitu-chat');
+  if (old === null) return;
+  try {
+    const msgs = JSON.parse(old);
+    const list = loadChats();
+    if (msgs.length && !list.some((c) => c.id === sessionId)) {
+      saveChats([{ id: sessionId, title: titleFrom(msgs), updated: Date.now(), msgs }, ...list]);
+    }
+  } catch { /* broken old data: skip it */ }
+  store.remove('mitu-chat');
+})();
+
+function showChat(id) {
+  sessionId = id;
+  store.set('mitu-session', id);
+  const chat = loadChats().find((c) => c.id === id);
   $('#messages').innerHTML = '';
-  for (const m of list) addMsg(m.who, m.html, false);
-  return true;
+  if (chat?.msgs.length) for (const m of chat.msgs) addMsg(m.who, m.html, false);
+  else $('#messages').innerHTML = welcomeHtml;
+  renderHistory();
 }
+function restoreChat() { showChat(sessionId); }
+
+function startNewChat() {
+  // A chat with no question in it isn't worth keeping.
+  saveChats(loadChats().filter((c) => c.id !== sessionId || hasQuestion(c)));
+  sessionId = newId();
+  store.set('mitu-session', sessionId);
+  $('#messages').innerHTML = '';
+  addMsg('bot', 'New chat started. Ask me anything about your documents ✨');
+}
+
+function when(time) {
+  return new Date(time).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+function renderHistory() {
+  const ul = $('#historyList');
+  const chats = loadChats().filter(hasQuestion);
+  $('#historyBtn').textContent = `🕘 Chat history (${chats.length})`;
+  if (!chats.length) {
+    ul.innerHTML = '<li class="empty">No saved chats yet. Ask MiTu something and it will appear here.</li>';
+    return;
+  }
+  ul.innerHTML = chats.map((c) => {
+    const n = c.msgs.filter((m) => m.who === 'user').length;
+    return `<li class="${c.id === sessionId ? 'current' : ''}">
+      <button type="button" class="open-chat" data-id="${esc(c.id)}">
+        <b>${esc(c.title)}</b><small>${esc(when(c.updated))} · ${n} question${n === 1 ? '' : 's'}</small>
+      </button>
+      <button type="button" class="del-chat" data-id="${esc(c.id)}" aria-label="Delete chat: ${esc(c.title)}" title="Delete this chat">✕</button>
+    </li>`;
+  }).join('');
+}
+
+function toggleHistory(open) {
+  $('#history').hidden = !open;
+  $('#historyBtn').setAttribute('aria-expanded', String(open));
+}
+$('#historyBtn').addEventListener('click', () => toggleHistory($('#history').hidden));
+$('#historyList').addEventListener('click', (e) => {
+  const open = e.target.closest('.open-chat');
+  const del = e.target.closest('.del-chat');
+  if (open) {
+    showChat(open.dataset.id);
+    toggleHistory(false);
+  } else if (del) {
+    if (!confirm('Delete this chat? This cannot be undone.')) return;
+    const id = del.dataset.id;
+    saveChats(loadChats().filter((c) => c.id !== id));
+    fetch(`/api/chat/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {}); // the server forgets it too
+    if (id === sessionId) startNewChat();
+    else renderHistory();
+  }
+});
 
 /* Shows the answer's text appearing word by word, then swaps in the formatted version.
    It only takes about a second, so it feels live without a streaming server. */
@@ -262,14 +362,8 @@ if (mic && Speech) {
   mic.hidden = true;
 }
 $('#suggest').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') ask(e.target.textContent); });
-$('#newChat').addEventListener('click', async () => {
-  await fetch(`/api/chat/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => {});
-  sessionId = newId();
-  store.set('mitu-session', sessionId);
-  $('#messages').innerHTML = '';
-  store.set(CHAT_KEY, '[]');
-  addMsg('bot', 'New chat started. Ask me anything about your documents ✨');
-});
+// The old chat stays in the history (and in the server's memory), so it can be continued later.
+$('#newChat').addEventListener('click', startNewChat);
 
 // ---------- documents ----------
 async function loadDocs() {

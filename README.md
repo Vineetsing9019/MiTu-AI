@@ -30,6 +30,7 @@ Built with Java 21 · Spring Boot 3 · Google Gemini · Retrieval-Augmented Gene
 | 🌐 **Answers from the web** | For news, people, places and other facts, Gemini searches Google itself (search grounding) and the answer shows 🌐 links to its sources. If grounding isn't available on the key, MiTu looks the question up on Wikipedia's free API instead. |
 | 🖼️ **Draws pictures in chat** | "Draw a cute cat in anime style": the AI writes a detailed image prompt and the picture is painted free by Pollinations.ai, with no key needed. |
 | 🧠 **Conversation memory** | Follow-up questions ("and for sick leave?") work, because each chat keeps its recent turns. |
+| 🕘 **Chat history** | Every chat is saved in your browser (the newest 20) and named after its first question. Open an old one and carry on: it keeps its own session, so follow-ups still remember the earlier turns. Delete one and the server forgets it too. |
 | 🎨 **Anime art from photos** | Upload a photo and pick a style (Anime, Watercolor, Pencil sketch, Comic, Pixel art). With a paid Gemini key, its image model redraws the photo itself. **Free:** Gemini describes the photo, then Pollinations.ai paints that scene in the style. |
 | 🛟 **Never breaks in a demo** | With no API key, a rate limit or an AI outage, MiTu degrades gracefully: keyword (TF-IDF) search answers with the best passages, and a browser-side image filter (Sobel edges + colour quantisation) still produces art. |
 | 🛡️ **Safe to put online** | A per-visitor token-bucket rate limiter protects the free AI quota. The API key only ever lives in an environment variable. |
@@ -38,6 +39,7 @@ Built with Java 21 · Spring Boot 3 · Google Gemini · Retrieval-Augmented Gene
   <img src="docs/documents.png" alt="Documents tab" width="49%">
   <img src="docs/art.png" alt="Anime art tab" width="49%">
 </p>
+<p align="center"><img src="docs/history.png" alt="Chat history: past chats named after their first question, with date and delete" width="760"></p>
 <p align="center"><img src="docs/mobile.png" alt="MiTu on a phone" width="260"></p>
 
 ---
